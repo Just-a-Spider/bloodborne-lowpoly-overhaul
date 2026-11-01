@@ -101,18 +101,6 @@ Produces `dist/bloodborne_lowpoly_overhaul.patch` with full SHA256 integrity man
 
 ---
 
-## Steam & Steam Deck Integration
-
-To run with this mod under Steam for automatic Steam Game Recording and screenshots (`F12`):
-
-1. In Steam, select **Games -> Add a Non-Steam Game to My Library...**
-2. Point the executable to your game launcher wrapper:
-   - Target: `/path/to/game_launcher`
-   - Launch Options: `offload --no-boost`
-3. Steam Overlay, controller input, Steam Game Recording, and screenshot captures will function natively in-game.
-
----
-
 ## Key Documentation
 - [BB_PSX_DEMAKE_GUIDE.md](BB_PSX_DEMAKE_GUIDE.md): Technical root causes, Soulstruct FLVER deserializer quirks, and pipeline architecture.
 - [BB_PSX_DEMAKE_MATH_AND_FINDINGS.md](BB_PSX_DEMAKE_MATH_AND_FINDINGS.md): Empirical framerate benchmarks, VRAM breakdown, Morton swizzle math, and binary container layout.
