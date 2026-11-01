@@ -1,0 +1,10 @@
+[package]
+name = "bb-viewer"
+version = "0.1.0"
+edition = "2021"
+description = "Native 3D Model Diagnostic Visualizer for Bloodborne PSX Demake"
+
+[dependencies]
+three-d = { version = "0.19", features = ["egui-gui"] }
+three-d-asset = { version = "0.10", features = ["gltf", "png"] }
+anyhow = "1.0"

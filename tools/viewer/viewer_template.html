@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Bloodborne 3D Model Diagnostic Viewer</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0d0f12;
+      color: #e0e4eb;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", monospace;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+    #canvas-container {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    /* Top Bar HUD */
+    #top-bar {
+      position: absolute;
+      top: 16px;
+      left: 20px;
+      right: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      pointer-events: none;
+      z-index: 10;
+    }
+    .hud-card {
+      background: rgba(18, 22, 28, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      padding: 12px 18px;
+      backdrop-filter: blur(10px);
+      pointer-events: auto;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }
+    .title-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .title-row h1 {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: #f1f5f9;
+      text-transform: uppercase;
+    }
+    .badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .badge-demake { background: #b91c1c; color: #fecaca; }
+    .badge-vanilla { background: #1e3a8a; color: #bfdbfe; }
+    .badge-cloth { background: #854d0e; color: #fef08a; }
+
+    /* Control Panel (Right Side) */
+    #control-panel {
+      position: absolute;
+      top: 80px;
+      right: 20px;
+      width: 320px;
+      max-height: calc(100vh - 120px);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      z-index: 10;
+      overflow-y: auto;
+    }
+    .panel-section {
+      background: rgba(18, 22, 28, 0.90);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      padding: 14px;
+      backdrop-filter: blur(10px);
+    }
+    .section-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #94a3b8;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .btn-group {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    button {
+      flex: 1;
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #cbd5e1;
+      padding: 8px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    button:hover {
+      background: #334155;
+      color: #fff;
+      border-color: #475569;
+    }
+    button.active {
+      background: #b91c1c;
+      color: #fff;
+      border-color: #ef4444;
+    }
+    button.active-vanilla {
+      background: #2563eb;
+      color: #fff;
+      border-color: #60a5fa;
+    }
+
+    /* Metrics Grid */
+    .metric-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      font-size: 12px;
+    }
+    .metric-box {
+      background: rgba(0, 0, 0, 0.35);
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.05);
+    }
+    .metric-lbl { color: #64748b; font-size: 10px; text-transform: uppercase; }
+    .metric-val { color: #f8fafc; font-size: 14px; font-weight: 700; margin-top: 2px; }
+    .metric-diff { font-size: 11px; font-weight: 600; color: #4ade80; }
+
+    /* Submesh Checklist */
+    .mesh-list {
+      max-height: 240px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .mesh-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      background: rgba(0,0,0,0.25);
+      border-radius: 4px;
+      font-size: 11px;
+    }
+    .mesh-item:hover { background: rgba(255,255,255,0.05); }
+    .mesh-item input[type="checkbox"] { cursor: pointer; }
+    .mesh-item label { flex: 1; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* Shortcuts Footer */
+    #shortcuts {
+      position: absolute;
+      bottom: 16px;
+      left: 20px;
+      font-size: 11px;
+      color: #64748b;
+      background: rgba(18, 22, 28, 0.75);
+      padding: 6px 14px;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      pointer-events: none;
+    }
+    #shortcuts kbd {
+      background: #1e293b;
+      color: #cbd5e1;
+      padding: 2px 5px;
+      border-radius: 3px;
+      border: 1px solid #334155;
+      font-family: inherit;
+    }
+    #loading-overlay {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: #0d0f12;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 16px;
+      z-index: 100;
+      transition: opacity 0.3s ease;
+    }
+    .spinner {
+      width: 48px; height: 48px;
+      border: 3px solid #1e293b;
+      border-top-color: #ef4444;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+  <!-- Load Three.js and OrbitControls / GLTFLoader via CDN -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+    <div style="font-weight: 600; font-size: 14px; letter-spacing: 1px;">LOADING 3D GEOMETRY...</div>
+  </div>
+
+  <div id="canvas-container"></div>
+
+  <div id="top-bar">
+    <div class="hud-card">
+      <div class="title-row">
+        <h1 id="model-title">Model Diagnostic Viewer</h1>
+        <span id="mode-badge" class="badge badge-demake">PSX DEMAKE</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="control-panel">
+    <!-- A/B Comparison -->
+    <div class="panel-section">
+      <div class="section-title">Model State (A/B Test)</div>
+      <div class="btn-group">
+        <button id="btn-demake" class="active" onclick="switchModel('demake')">Demake [PSX]</button>
+        <button id="btn-vanilla" onclick="switchModel('vanilla')">Vanilla [Clean]</button>
+      </div>
+    </div>
+
+    <!-- Shading & Visual Overlays -->
+    <div class="panel-section">
+      <div class="section-title">Shading & Overlays</div>
+      <div class="btn-group">
+        <button id="btn-textured" class="active" onclick="setShading('textured')">Textured</button>
+        <button id="btn-flat" onclick="setShading('flat')">Flat Facet</button>
+        <button id="btn-clay" onclick="setShading('clay')">Clay</button>
+      </div>
+      <button id="btn-wireframe" style="width: 100%; margin-top: 4px;" onclick="toggleWireframe()">Toggle Wireframe [W]</button>
+    </div>
+
+    <!-- Realtime Diagnostic Metrics -->
+    <div class="panel-section">
+      <div class="section-title">Geometry Metrics</div>
+      <div class="metric-grid">
+        <div class="metric-box">
+          <div class="metric-lbl">Total Triangles</div>
+          <div class="metric-val" id="val-tris">-</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-lbl">Total Vertices</div>
+          <div class="metric-val" id="val-verts">-</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-lbl">Submeshes</div>
+          <div class="metric-val" id="val-meshes">-</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-lbl">Reduction Diff</div>
+          <div class="metric-val metric-diff" id="val-diff">-</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Submesh Hierarchy Tree -->
+    <div class="panel-section">
+      <div class="section-title">
+        <span>Submesh Isolation</span>
+        <div style="display: flex; gap: 4px;">
+          <button style="flex: none; padding: 2px 6px; font-size: 10px;" onclick="toggleAllSubmeshes(true)">All</button>
+          <button style="flex: none; padding: 2px 6px; font-size: 10px;" onclick="toggleAllSubmeshes(false)">None</button>
+          <button style="flex: none; padding: 2px 6px; font-size: 10px;" onclick="isolateBodiesOnly()">Bodies</button>
+        </div>
+      </div>
+      <div class="mesh-list" id="submesh-list">
+        <!-- Injected via JavaScript -->
+      </div>
+    </div>
+  </div>
+
+  <div id="shortcuts">
+    Shortcuts: <kbd>Space</kbd> Toggle Vanilla/Demake | <kbd>W</kbd> Wireframe | <kbd>F</kbd> Flat Facets | <kbd>R</kbd> Reset Camera
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+    let scene, camera, renderer, controls;
+    let demakeModel = null;
+    let vanillaModel = null;
+    let currentModelMode = 'demake'; // 'demake' or 'vanilla'
+    let currentShading = 'textured'; // 'textured', 'flat', 'clay'
+    let wireframeActive = false;
+
+    let demakeStats = { tris: 0, verts: 0, meshes: 0 };
+    let vanillaStats = { tris: 0, verts: 0, meshes: 0 };
+
+    initScene();
+    loadModels();
+
+    function initScene() {
+      const container = document.getElementById('canvas-container');
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0e1117);
+
+      camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.05, 100);
+      camera.position.set(0, 1.2, 2.5);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.2;
+      container.appendChild(renderer.domElement);
+
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.08;
+      controls.target.set(0, 0.9, 0);
+
+      // Studio Lighting
+      const hemiLight = new THREE.HemisphereLight(0xffffff, 0x334155, 1.2);
+      scene.add(hemiLight);
+
+      const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.8);
+      dirLight1.position.set(3, 5, 4);
+      scene.add(dirLight1);
+
+      const dirLight2 = new THREE.DirectionalLight(0x94a3b8, 0.8);
+      dirLight2.position.set(-3, -1, -3);
+      scene.add(dirLight2);
+
+      // Ground reference grid
+      const grid = new THREE.GridHelper(10, 20, 0x334155, 0x1e293b);
+      grid.position.y = 0;
+      scene.add(grid);
+
+      window.addEventListener('resize', onWindowResize);
+      window.addEventListener('keydown', onKeyDown);
+      animate();
+    }
+
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    async function loadModels() {
+      const loader = new GLTFLoader();
+
+      try {
+        // Load Demake Model
+        const demakeGltf = await loader.loadAsync('/model.glb');
+        demakeModel = demakeGltf.scene;
+        scene.add(demakeModel);
+        computeModelStats(demakeModel, demakeStats);
+
+        // Center and frame camera
+        fitCameraToModel(demakeModel);
+
+        // Try to load Vanilla Model
+        try {
+          const vanillaGltf = await loader.loadAsync('/vanilla.glb');
+          vanillaModel = vanillaGltf.scene;
+          vanillaModel.visible = false;
+          scene.add(vanillaModel);
+          computeModelStats(vanillaModel, vanillaStats);
+        } catch (e) {
+          console.warn('Vanilla model not available or not found.');
+          document.getElementById('btn-vanilla').disabled = true;
+          document.getElementById('btn-vanilla').style.opacity = '0.5';
+        }
+
+        buildSubmeshList();
+        updateMetricsUI();
+        document.getElementById('loading-overlay').style.opacity = '0';
+        setTimeout(() => document.getElementById('loading-overlay').style.display = 'none', 300);
+      } catch (err) {
+        console.error('Failed to load GLB model:', err);
+        alert('Error loading model. Check terminal output.');
+      }
+    }
+
+    function computeModelStats(root, targetStats) {
+      let tris = 0;
+      let verts = 0;
+      let meshes = 0;
+      root.traverse(child => {
+        if (child.isMesh && child.geometry) {
+          meshes++;
+          const geom = child.geometry;
+          verts += geom.attributes.position ? geom.attributes.position.count : 0;
+          if (geom.index) {
+            tris += geom.index.count / 3;
+          } else if (geom.attributes.position) {
+            tris += geom.attributes.position.count / 3;
+          }
+          // Store original material reference
+          child.userData.origMaterial = child.material;
+        }
+      });
+      targetStats.tris = tris;
+      targetStats.verts = verts;
+      targetStats.meshes = meshes;
+    }
+
+    function fitCameraToModel(root) {
+      const box = new THREE.Box3().setFromObject(root);
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const fov = camera.fov * (Math.PI / 180);
+      let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2)) * 1.5;
+
+      camera.position.set(center.x, center.y + size.y * 0.1, center.z + cameraZ);
+      controls.target.copy(center);
+      controls.update();
+    }
+
+    window.switchModel = function(mode) {
+      if (mode === currentModelMode) return;
+      currentModelMode = mode;
+
+      const badge = document.getElementById('mode-badge');
+      const btnDemake = document.getElementById('btn-demake');
+      const btnVanilla = document.getElementById('btn-vanilla');
+
+      if (mode === 'demake') {
+        if (demakeModel) demakeModel.visible = true;
+        if (vanillaModel) vanillaModel.visible = false;
+        badge.textContent = 'PSX DEMAKE';
+        badge.className = 'badge badge-demake';
+        btnDemake.className = 'active';
+        btnVanilla.className = '';
+      } else {
+        if (demakeModel) demakeModel.visible = false;
+        if (vanillaModel) vanillaModel.visible = true;
+        badge.textContent = 'VANILLA CLEAN';
+        badge.className = 'badge badge-vanilla';
+        btnDemake.className = '';
+        btnVanilla.className = 'active-vanilla';
+      }
+      buildSubmeshList();
+      updateMetricsUI();
+      applyShading();
+    };
+
+    window.setShading = function(shading) {
+      currentShading = shading;
+      document.getElementById('btn-textured').className = shading === 'textured' ? 'active' : '';
+      document.getElementById('btn-flat').className = shading === 'flat' ? 'active' : '';
+      document.getElementById('btn-clay').className = shading === 'clay' ? 'active' : '';
+      applyShading();
+    };
+
+    window.toggleWireframe = function() {
+      wireframeActive = !wireframeActive;
+      const btn = document.getElementById('btn-wireframe');
+      btn.className = wireframeActive ? 'active' : '';
+      applyShading();
+    };
+
+    function applyShading() {
+      const activeRoot = currentModelMode === 'demake' ? demakeModel : vanillaModel;
+      if (!activeRoot) return;
+
+      activeRoot.traverse(child => {
+        if (child.isMesh && child.userData.origMaterial) {
+          const orig = child.userData.origMaterial;
+          if (currentShading === 'clay') {
+            child.material = new THREE.MeshStandardMaterial({
+              color: 0x94a3b8,
+              roughness: 0.8,
+              metalness: 0.1,
+              wireframe: wireframeActive,
+              side: THREE.DoubleSide
+            });
+          } else if (currentShading === 'flat') {
+            child.material = new THREE.MeshLambertMaterial({
+              map: orig.map,
+              color: orig.color,
+              wireframe: wireframeActive,
+              flatShading: true,
+              side: THREE.DoubleSide,
+              alphaTest: (orig.alphaTest !== undefined && orig.alphaTest > 0) ? orig.alphaTest : 0,
+              transparent: orig.transparent || false
+            });
+            child.material.needsUpdate = true;
+          } else {
+            // Textured
+            child.material = orig;
+            child.material.wireframe = wireframeActive;
+            child.material.needsUpdate = true;
+          }
+        }
+      });
+    }
+
+    function buildSubmeshList() {
+      const listEl = document.getElementById('submesh-list');
+      listEl.innerHTML = '';
+      const activeRoot = currentModelMode === 'demake' ? demakeModel : vanillaModel;
+      if (!activeRoot) return;
+
+      let idx = 0;
+      activeRoot.traverse(child => {
+        if (child.isMesh) {
+          const item = document.createElement('div');
+          item.className = 'mesh-item';
+
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.checked = child.visible;
+          cb.id = `mesh-cb-${idx}`;
+          cb.onchange = (e) => { child.visible = e.target.checked; };
+
+          const lbl = document.createElement('label');
+          lbl.htmlFor = `mesh-cb-${idx}`;
+          const isCloth = child.name.toLowerCase().includes('cloth');
+          lbl.innerHTML = `${child.name} ${isCloth ? '<span class="badge badge-cloth">CLOTH</span>' : ''}`;
+
+          item.appendChild(cb);
+          item.appendChild(lbl);
+          listEl.appendChild(item);
+          idx++;
+        }
+      });
+    }
+
+    window.toggleAllSubmeshes = function(visible) {
+      const activeRoot = currentModelMode === 'demake' ? demakeModel : vanillaModel;
+      if (!activeRoot) return;
+      activeRoot.traverse(child => {
+        if (child.isMesh) child.visible = visible;
+      });
+      buildSubmeshList();
+    };
+
+    window.isolateBodiesOnly = function() {
+      const activeRoot = currentModelMode === 'demake' ? demakeModel : vanillaModel;
+      if (!activeRoot) return;
+      activeRoot.traverse(child => {
+        if (child.isMesh) {
+          const low = child.name.toLowerCase();
+          // Keep base bodies (#00#body, #01#body, etc.), hide cosmetic hats/props
+          child.visible = low.includes('body') || low.includes('#00#') || low.includes('#01#') || low.includes('#02#') || low.includes('#03#');
+        }
+      });
+      buildSubmeshList();
+    };
+
+    function updateMetricsUI() {
+      const stats = currentModelMode === 'demake' ? demakeStats : vanillaStats;
+      document.getElementById('val-tris').textContent = Number(stats.tris).toLocaleString();
+      document.getElementById('val-verts').textContent = Number(stats.verts).toLocaleString();
+      document.getElementById('val-meshes').textContent = stats.meshes;
+
+      if (vanillaStats.tris > 0 && demakeStats.tris > 0) {
+        const diffPct = ((demakeStats.tris - vanillaStats.tris) / vanillaStats.tris * 100).toFixed(1);
+        document.getElementById('val-diff').textContent = `${diffPct}%`;
+        document.getElementById('val-diff').style.color = demakeStats.tris <= vanillaStats.tris ? '#4ade80' : '#f87171';
+      } else {
+        document.getElementById('val-diff').textContent = '-';
+      }
+    }
+
+    function onKeyDown(e) {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        window.switchModel(currentModelMode === 'demake' ? 'vanilla' : 'demake');
+      } else if (e.code === 'KeyW') {
+        window.toggleWireframe();
+      } else if (e.code === 'KeyF') {
+        window.setShading(currentShading === 'flat' ? 'textured' : 'flat');
+      } else if (e.code === 'KeyR') {
+        const activeRoot = currentModelMode === 'demake' ? demakeModel : vanillaModel;
+        if (activeRoot) fitCameraToModel(activeRoot);
+      }
+    }
+  </script>
+</body>
+</html>

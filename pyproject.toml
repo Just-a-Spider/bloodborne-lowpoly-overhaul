@@ -1,0 +1,23 @@
+[project]
+name = "bloodborne"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Just-a-Spider", email = "120763283+Just-a-Spider@users.noreply.github.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "bsdiff4>=1.4.1",
+    "ispc-texcomp>=1.0.1",
+    "numpy>=2.5.4",
+    "pillow>=12.3.0",
+    "pyfqmr>=0.5.0",
+    "scipy>=1.18.1",
+    "soulstruct>=2.6.0",
+    "texture2ddecoder>=1.0.6",
+]
+
+[tool.uv]
+package = false
+
