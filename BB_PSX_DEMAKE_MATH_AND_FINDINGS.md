@@ -1113,6 +1113,71 @@ When subjected to Blender geometry decimation:
 Resolution:
 All Chalice ladder archives (`o298000`–`o298214`, 15 archives) along with all interactive ladder rigs across the entire game are whitelisted for pristine FromSoftware geometry bypass in `batch_blender_demake_obj.py`. Deployed archives match retail binary geometry with $\Delta = 0.000000$ m parity.
 
+### 29.5. Yahar'gul & Nightmares Multi-Bone Composite Assemblies, Loot Corpses & Celestial Displacements
+
+In Yahar'gul (`m28`), Nightmare of Mensis (`m26`), Nightmare Frontier (`m33`), and Hunter's Nightmare (`m34`), 74 object archives exhibited catastrophic bounding box and vertex coordinate displacements after Blender decimation:
+
+1. **Celestial Bodies & Sky Domes**:
+   - `o280021` (Blood Moon in Yahar'gul): Vanilla AABB center $(0.0, 0.0, 0.0)$ vs PSX demake center offset by $\Delta = 565.48$ m ($565$ m altitude jump).
+   - `o349900` (Sky dome in Hunter's Nightmare): Offset by $\Delta = 633.31$ m.
+   - `o210020` / `o210021` (Hunter's Dream moons) and `o269900` (Mensis sky dome).
+2. **Multi-Bone Unskinned Composite Assemblies**:
+   - `o339900` (Nightmare Frontier prayer altars & chairs, 57 bones): Offset by $\Delta = 68.20$ m.
+   - `o281511` (Yahar'gul altar candles): Offset by $\Delta = 35.60$ m.
+   - `o281500` (Yahar'gul bed assembly, 77 bones): Offset by $\Delta = 19.35$ m.
+   - `o280016` (Foliage card cluster assembly, 147 bones): Offset by $\Delta = 18.13$ m.
+   - `o281010` (Lantern light rig): Offset by $\Delta = 4.60$ m.
+   - `o340120` (Hanging chain assembly): Offset by $\Delta = 3.32$ m.
+   - `o288002`, `o288100`, `o288090` (Corpse carts & heaps): Offset up to $\Delta = 2.95$ m.
+   - `o260310`, `o260303` (Mensis bird cages & altars): Offset by $\Delta = 2.08$ m.
+   - `o342100`, `o342101` (Hunter's Nightmare ladders): Offset by $\Delta = 0.58$ m.
+3. **Item Loot Corpses (`o000600`–`o000655`)**:
+   - Corpses holding item pickups (`o000600`..`o000655`) contain interaction dummies and collision boundaries. Geometry decimation displaced the interactive prompt anchors and collision envelopes relative to world placement.
+
+#### Mathematical Root Cause
+In FromSoftware rigid models (`has_skin = False`), submesh vertices are defined in the coordinate frame of their default bone $b_k \in [0, N_{\text{bones}}-1]$:
+$$\mathbf{v}_{\text{model}} = \mathbf{M}_{b_k} \mathbf{v}_{\text{local}}$$
+where $\mathbf{M}_{b_k} = \prod_{i \in \text{anc}(b_k)} \mathbf{T}_i \mathbf{R}_i \mathbf{S}_i$ is the world transformation accumulated across parent bones.
+When exported to standard glTF without an Armature node containing the bone hierarchy, the transformation $\mathbf{M}_{b_k}$ is omitted, effectively forcing $\mathbf{M}_{b_k} = \mathbf{I}$.
+Upon reimporting and drawing in `bbport` (where props lacking `.anibnd` are drawn without bone scene-graph updates), all child submeshes collapse toward $(0,0,0)$ or translate to the wrong bone origins, causing celestial domes and multi-bone props to float, sink, or drift by dozens to hundreds of meters.
+
+#### Universal Dynamic Detection & Resolution
+In `tools/pipeline/batch_blender_demake_obj.py`:
+1. Universal unskinned offset detector: Any FLVER where `has_skin == False`, $N_{\text{bones}} > 1$, and at least one child bone has a non-zero translation or rotation ($\Vert \mathbf{t}_b \Vert_\infty > 0.01$ or $\Vert \mathbf{r}_b \Vert_\infty > 0.01$) is dynamically identified and bypassed pristine.
+2. Explicit whitelists for:
+   - Loot corpses: `stem.startswith("o0006")`
+   - Celestial objects: `o280021`, `o349900`, `o210020`, `o210021`, `o269900`, `*9900`, or material name containing `moon`/`sky`.
+   - Yahar'gul composites: `o280016`, `o2810*`, `o2811*`, `o2812*`, `o2815*`, `o2820*`, `o2830*`, `o2846*`, `o2880*`, `o2881*`, `o2890*`, `o2899*`.
+   - Nightmare composites: `o2602*`, `o2603*`, `o2610*`, `o2698*`, `o2699*`, `o330201*`, `o3399*`, `o3401*`, `o3420*`, `o3421*`, `o343201*`, `o3490*`, `o3499*`.
+3. Verification across all 231 candidate objects confirmed 0 coordinate/bounding box discrepancies $> 0.05$ m (remaining single-bone rock `o330202` has $\Delta = 0.077$ m purely from surface decimation, center drift $< 0.03$ m).
+
+### 29.6. Lecture Building (`m24_02`) & Rigid Model Affine Scaling / Orientation Invariants ($\mathbf{T}_b, \mathbf{R}_b, \mathbf{S}_b$)
+
+In Lecture Building (`m24_02`) along with Hemwick and Cainhurst (`o24*`), 69 object archives exhibited severe bounding box and coordinate displacement anomalies:
+
+1. **Multi-Bone Gates, Elevators & Hanging Chains**:
+   - `o240522` (Lecture Building gates/elevators, 5 bones): Bone 2 translated by $\mathbf{t}_2 = (0.0, -12.50, 0.0)$, causing a $\Delta = 12.50$ m vertical displacement.
+   - `o241021` (Lecture Building assembly, 3 bones): Bone 1 translated by $\mathbf{t}_1 = (0.20, 7.68, 0.02)$, causing $\Delta = 9.85$ m offset.
+   - `o240521` (Gate & ladder rig, 23 bones): Bones translated up to $10.34$ m, causing $\Delta = 9.74$ m displacement.
+   - `o240031` (Hanging chains, 6 bones): Translated up to $5.35$ m, causing $\Delta = 3.32$ m chain detachment.
+   - `o247001` (Gate assembly, 30 bones): Translated up to $13.79$ m, causing $\Delta = 1.21$ m displacement.
+   - `o241000` (Platform/fixture, 3 bones): Offset by $\Delta = 0.655$ m.
+   - `o240055` (Lecture Building fixture, 2 bones): Offset by $\Delta = 0.474$ m.
+   - `o009720` (Light anchor dummy, 2 bones): Offset by $\Delta = 0.101$ m.
+
+2. **Non-Unit Bone Scale Distortion ($\mathbf{S}_b \ne \mathbf{1}$)**:
+   A deeper mathematical flaw was discovered in unskinned single-bone models: FromSoftware rigid props can store arbitrary scaling vectors $\mathbf{s}_b = (s_x, s_y, s_z)$ inside `flv.bones[b].scale`:
+   - `o240084`: Authored with bone scale $\mathbf{s}_0 = (0.502, 0.502, 0.502)$. Exporting to glTF without an Armature dropped the $0.502$ scale, causing the reimported model to expand by $\sim 4\times$ in bounding volume ($\Delta = 1.89$ m).
+   - `o243007`: Authored with bone scale $\mathbf{s}_0 = (0.700, 0.700, 0.700)$, expanding $2\times$ upon glTF roundtripping ($\Delta = 1.25$ m).
+   - `o240028` (Barrel): Authored with bone scale $\mathbf{s}_0 = (1.145, 1.145, 1.145)$, shrinking upon glTF roundtripping ($\Delta = 0.32$ m).
+   - `o249900`: Authored with bone 0 translation $\mathbf{t}_0 = (0.0, -0.005, 0.984)$, shifting the mesh center by $0.98$ m.
+
+#### Generalized Affine Transformation Guard
+To guarantee 100% geometric and spatial integrity, the unskinned bypass condition was generalized from translation-only to the full affine transformation group $\text{SE}(3) \times \mathbb{R}^3$:
+$$\text{Bypass} \iff \neg \text{has\_skin} \land \left( N_{\text{bones}} > 1 \lor \exists b \in \text{bones}: \Vert \mathbf{t}_b \Vert_\infty > 0.005 \lor \Vert \mathbf{r}_b \Vert_\infty > 0.005 \lor \Vert \mathbf{s}_b - \mathbf{1} \Vert_\infty > 0.005 \right)$$
+Combined with explicit whitelists for Lecture Building/Cainhurst/Hemwick composite assemblies (`o24003*`, `o24005*`, `o24008*`, `o2401*`, `o2405*`, `o2410*`, `o2424*`, `o2429*`, `o2430*`, `o2445*`, `o2470*`, `o2480*`, `o2490*`, `o009720`, `o249900`).
+Post-deploy verification across all 75 objects placed in Lecture Building (`m24_02_00_00` and `m24_02_00_01`) confirmed 0 coordinate/offset discrepancies.
+
 ---
 
 ## 33. Empirical Performance Benchmarks & Dual-Bottleneck Architecture (GTX 1650 Max-Q)

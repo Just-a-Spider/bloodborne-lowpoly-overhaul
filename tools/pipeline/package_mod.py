@@ -151,7 +151,32 @@ def main():
         print("Dry run complete. Exiting.")
         return
 
-    # 2. Copy files to destination mod folder
+    # 2. Clean stale files from destination mod folder (files no longer differing from vanilla)
+    if out_dir.exists():
+        print(f"Checking for stale files in {out_dir}...")
+        modified_rel_set = {rel_path for _, rel_path, _ in modified_files}
+        stale_purged = 0
+        for root, _, files in os.walk(out_dir):
+            for f in files:
+                dest_file = Path(root) / f
+                if dest_file.name in {"mod.json", "README.txt"}:
+                    continue
+                rel = dest_file.relative_to(out_dir)
+                if rel not in modified_rel_set:
+                    dest_file.unlink()
+                    stale_purged += 1
+        # Clean empty directories
+        for root, dirs, _ in os.walk(out_dir, topdown=False):
+            for d in dirs:
+                dir_path = Path(root) / d
+                try:
+                    dir_path.rmdir()
+                except OSError:
+                    pass
+        if stale_purged > 0:
+            print(f"Purged {stale_purged} stale files no longer modified.")
+
+    # 3. Copy files to destination mod folder
     print(f"Copying {len(modified_files)} delta assets to {out_dir}...")
     copied_count = 0
     for p_path, rel_path, sz in modified_files:
@@ -162,7 +187,7 @@ def main():
         if copied_count % 500 == 0 or copied_count == len(modified_files):
             print(f"  Progress: {copied_count}/{len(modified_files)} files copied...")
 
-    # 3. Create metadata and readme inside mod directory
+    # 4. Create metadata and readme inside mod directory
     meta = {
         "name": "Bloodborne: Low-Poly Overhaul",
         "version": "1.0.0",

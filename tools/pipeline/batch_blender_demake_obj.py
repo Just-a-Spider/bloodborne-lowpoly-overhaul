@@ -105,7 +105,7 @@ def process_single_obj_archive(
             stem.startswith("o29537") or stem.startswith("o29502") or stem.startswith("o29503")
             or stem.startswith("o29507") or stem.startswith("o29510") or stem.startswith("o29515")
             or stem.startswith("o29519") or stem.startswith("o29523") or stem.startswith("o29561")
-            or stem.startswith("o2961")
+            or stem.startswith("o2961") or stem.startswith("o0099") or stem.startswith("o325")
         )
         is_chalice_statue = (
             stem.startswith("o2973") or stem.startswith("o2974") or stem.startswith("o2937")
@@ -115,14 +115,80 @@ def process_single_obj_archive(
             stem.startswith("o2902") or stem.startswith("o2903") or stem.startswith("o2904")
         )
 
+        # 9. Item loot corpses (o000600..o000655): keep pristine interaction dummies, collision and physics alignment
+        is_loot_corpse = stem.startswith("o0006")
+
+        # 10. Celestial, Sky Domes & Moons:
+        # Crucial for o280021 (Yahar'gul blood moon), o349900 (Hunter's Nightmare sky), o210020/o210021 (Hunter's Dream moon)
+        is_celestial = (
+            stem in {"o280021", "o349900", "o210020", "o210021", "o269900"}
+            or stem.endswith("9900")
+        )
+
+        # 11. Multi-bone composite assemblies, altars, corpse piles, and fixtures in Yahar'gul & Nightmares:
+        is_yahargul_composite = (
+            stem.startswith("o280016") or stem.startswith("o2810") or stem.startswith("o2811")
+            or stem.startswith("o2812") or stem.startswith("o2815") or stem.startswith("o2820")
+            or stem.startswith("o2830") or stem.startswith("o2846") or stem.startswith("o2880")
+            or stem.startswith("o2881") or stem.startswith("o2890") or stem.startswith("o2899")
+        )
+        is_nightmare_composite = (
+            stem.startswith("o2602") or stem.startswith("o2603") or stem.startswith("o2610")
+            or stem.startswith("o2698") or stem.startswith("o2699")
+            or stem.startswith("o330201") or stem.startswith("o3399")
+            or stem.startswith("o3401") or stem.startswith("o3420") or stem.startswith("o3421")
+            or stem.startswith("o343201") or stem.startswith("o3490") or stem.startswith("o3499")
+        )
+
+        # 12. Multi-bone composite assemblies, gates, hanging chains, and fixtures in Lecture Building, Cainhurst & Hemwick:
+        is_lecture_composite = (
+            stem.startswith("o32205") or stem.startswith("o32200") or stem.startswith("o3224")
+            or stem.startswith("o3210") or stem.startswith("o325")
+            or stem.startswith("o24003") or stem.startswith("o24005") or stem.startswith("o24008")
+            or stem.startswith("o2401") or stem.startswith("o2405") or stem.startswith("o2410")
+            or stem.startswith("o2424") or stem.startswith("o2429") or stem.startswith("o2430")
+            or stem.startswith("o2445") or stem.startswith("o2470") or stem.startswith("o2480")
+            or stem.startswith("o2490") or stem in {"o009720", "o249900"}
+        )
+
+        # 13. Universal unskinned affine bone check (T, R, S):
+        # Detect any rigid prop where:
+        #  a) len(bones) > 1 (multi-bone unskinned assembly)
+        #  b) Any bone has non-zero translation, non-zero rotation, or non-unit scale.
+        # Exporting these through glTF without armature transforms causes them to detach, collapse or rescale.
+        has_offset_bones = False
+        flv_entry_check = next((e for e in b_vanilla.entries if e.name.lower().endswith(".flver")), None)
+        if flv_entry_check and len(flv_entry_check.get_uncompressed_data()) > 0x100:
+            try:
+                flv_chk = FLVER.from_bytes(flv_entry_check.get_uncompressed_data())
+                has_skin = any('bone_indices' in m.vertex_arrays[0].array.dtype.names for m in flv_chk.meshes if m.vertex_arrays)
+                if not has_skin:
+                    if len(flv_chk.bones) > 1:
+                        has_offset_bones = True
+                    else:
+                        for b in flv_chk.bones:
+                            if (
+                                abs(b.translate.x) > 0.005 or abs(b.translate.y) > 0.005 or abs(b.translate.z) > 0.005
+                                or abs(b.rotate.x) > 0.005 or abs(b.rotate.y) > 0.005 or abs(b.rotate.z) > 0.005
+                                or abs(b.scale.x - 1.0) > 0.005 or abs(b.scale.y - 1.0) > 0.005 or abs(b.scale.z - 1.0) > 0.005
+                            ):
+                                has_offset_bones = True
+                                break
+                if any('moon' in m.material.name.lower() or 'sky' in m.material.name.lower() for m in flv_chk.meshes):
+                    is_celestial = True
+            except Exception:
+                pass
+
         if (
             is_ladder or is_chalice_door_statue or is_sensitive_door or has_anibnd or is_stair
             or is_chalice_composite or is_chalice_chandelier or is_chalice_statue or is_chalice_elevator
+            or is_loot_corpse or is_celestial or is_yahargul_composite or is_nightmare_composite
+            or is_lecture_composite or has_offset_bones
         ):
             dest_path = sandbox_path if deploy else stage_path
             dest_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(vanilla_path, dest_path)
-            return filename, True, 0, 0, "Pristine bypass (ladder/statue/chandelier/elevator/anibnd)"
+            return filename, True, 0, 0, "Pristine bypass (ladder/statue/chandelier/elevator/composite/loot/celestial/offset/anibnd)"
 
         has_alpha_cutout = stem in {"o213002"}
 
