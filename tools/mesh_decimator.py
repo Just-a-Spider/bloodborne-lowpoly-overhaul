@@ -486,10 +486,11 @@ def compute_angle_weighted_normals_and_tangents(
     verts_pos: np.ndarray,
     verts_uv0: np.ndarray,
     verts_uv1: np.ndarray,
-    faces: np.ndarray
+    faces: np.ndarray,
+    custom_normals: Optional[np.ndarray] = None
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Computes scale-invariant Thurmer-Wuthrich corner-angle-weighted vertex normals
+    Computes scale-invariant Thurmer-Wuthrich corner-angle-weighted vertex normals (or preserves custom_normals)
     and handedness-aware (Tw in {-1.0, +1.0}) Gram-Schmidt tangent frames for uv_0 and uv_1.
     """
     num_verts = len(verts_pos)
@@ -515,14 +516,21 @@ def compute_angle_weighted_normals_and_tangents(
     a2 = np.arccos(np.clip(np.sum((-e02) * (-e12), axis=1) / (l02 * l12), -1.0, 1.0))
     angles = np.stack([a0, a1, a2], axis=1)
 
-    vert_normals = np.zeros((num_verts, 3), dtype=np.float32)
-    for c in range(3):
-        np.add.at(vert_normals, faces[:, c], unit_fn * angles[:, c:c+1])
+    if custom_normals is not None and custom_normals.ndim == 2 and custom_normals.shape == (num_verts, 3):
+        vert_normals = custom_normals.astype(np.float32)
+        vn_len = np.linalg.norm(vert_normals, axis=1, keepdims=True)
+        vert_normals = np.where(
+            vn_len > 1e-6, vert_normals / np.maximum(vn_len, 1e-6), np.array([[0.0, 1.0, 0.0]], dtype=np.float32)
+        )
+    else:
+        vert_normals = np.zeros((num_verts, 3), dtype=np.float32)
+        for c in range(3):
+            np.add.at(vert_normals, faces[:, c], unit_fn * angles[:, c:c+1])
 
-    vn_len = np.linalg.norm(vert_normals, axis=1, keepdims=True)
-    vert_normals = np.where(
-        vn_len > 1e-6, vert_normals / np.maximum(vn_len, 1e-6), np.array([[0.0, 1.0, 0.0]], dtype=np.float32)
-    ).astype(np.float32)
+        vn_len = np.linalg.norm(vert_normals, axis=1, keepdims=True)
+        vert_normals = np.where(
+            vn_len > 1e-6, vert_normals / np.maximum(vn_len, 1e-6), np.array([[0.0, 1.0, 0.0]], dtype=np.float32)
+        ).astype(np.float32)
 
     def _build_tangent_array(uv_arr: np.ndarray) -> np.ndarray:
         u0 = uv_arr[faces[:, 0]]

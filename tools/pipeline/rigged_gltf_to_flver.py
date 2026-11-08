@@ -78,7 +78,9 @@ def decouple_cloth_mtd(mtd_name: str) -> str:
 def compile_glb_to_flver(
     glb_path: str | Path,
     base_flver: FLVER,
-    decouple_cloth: bool = True
+    decouple_cloth: bool = True,
+    use_gltf_normals: bool = False,
+    keep_cloth: bool = False,
 ) -> FLVER:
     """
     Compiles geometry, UVs, and bone weights from a rigged .glb into a target FLVER.
@@ -116,10 +118,27 @@ def compile_glb_to_flver(
         print(f"Constructed Blender-to-FLVER bone remap LUT for {len(blender_to_flver_bone)} joints")
 
     for mi, m in enumerate(base_flver.meshes):
-        if mi >= len(gltf_meshes):
-            break
+        is_cloth = False
+        if m.material:
+            mat_def = (m.material.mat_def_name or "").lower()
+            mat_n = (m.material.name or "").lower()
+            is_cloth = "cloth" in mat_def or "cloth" in mat_n
 
-        gm = gltf_meshes[mi]
+        if keep_cloth and is_cloth:
+            print(f"Preserving original cloth mesh {mi} ({m.material.name if m.material else ''}) for Havok solver")
+            continue
+
+        gm = None
+        for cand in gltf_meshes:
+            c_name = cand.get('name', '')
+            if c_name.startswith(f"Mesh_{mi}_") or c_name == f"Mesh_{mi}":
+                gm = cand
+                break
+        if gm is None:
+            if mi < len(gltf_meshes):
+                gm = gltf_meshes[mi]
+            else:
+                break
         p = gm['primitives'][0]
 
         pos = read_gltf_accessor(gltf, bin_bytes, p['attributes']['POSITION'])
@@ -161,8 +180,10 @@ def compile_glb_to_flver(
         zero_mask = (weights < 1e-5)
         remapped_joints[zero_mask] = 0
 
-        # Compute angle-weighted smooth normals and Gram-Schmidt tangent frames
-        calc_norm, tan0, tan1 = compute_angle_weighted_normals_and_tangents(pos, uv, uv, faces)
+        # Compute angle-weighted smooth normals and Gram-Schmidt tangent frames (or preserve glTF flat normals)
+        calc_norm, tan0, tan1 = compute_angle_weighted_normals_and_tangents(
+            pos, uv, uv, faces, custom_normals=norm if use_gltf_normals else None
+        )
 
         # Midline sagittal symmetry enforcement (only for skinned character rigs, NOT for world objects/doors)
         if len(skin_joints) > 0:

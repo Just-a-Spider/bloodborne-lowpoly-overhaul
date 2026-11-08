@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-package_mod.py - Extract Bloodborne: Low-Poly Overhaul asset delta into a clean standalone bbport mod.
+package_mod.py - Extract Bloodborne: Low-Poly Overhaul asset delta into a clean standalone mod folder.
 
 Reads:
   - Base game: CUSA03173/ (read-only reference)
   - PSX stage: CUSA03173-PSX/ (read-only reference)
 
 Writes:
-  - Destination mod folder: ../bbport-src/mods/Bloodborne Low-Poly Overhaul/
+  - Destination mod folder: mods/Bloodborne Low-Poly Overhaul/
     (or custom destination via --out)
 
 Filters:
@@ -46,7 +46,7 @@ def compute_md5(filepath: Path, chunk_size: int = 1024 * 1024) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Package Bloodborne: Low-Poly Overhaul into a bbport mod.")
+    parser = argparse.ArgumentParser(description="Package Bloodborne: Low-Poly Overhaul into a mod folder.")
     parser.add_argument(
         "--vanilla",
         type=Path,
@@ -62,7 +62,7 @@ def main():
     parser.add_argument(
         "--out",
         type=Path,
-        default=Path("../bbport-src/mods/Bloodborne Low-Poly Overhaul"),
+        default=Path("mods/Bloodborne Low-Poly Overhaul"),
         help="Output mod directory path",
     )
     parser.add_argument(
@@ -201,14 +201,12 @@ def main():
 
     readme = """Bloodborne: Low-Poly Overhaul
 =============================
-Standalone loose-file performance and retro overhaul mod for bbport.
+Standalone loose-file performance and retro overhaul mod.
 
 Installation:
-1. Place this 'Bloodborne Low-Poly Overhaul' directory inside your bbport mods folder:
-   ~/.local/share/bbhost/mods/Bloodborne Low-Poly Overhaul/
-   (or <bbport-src>/mods/Bloodborne Low-Poly Overhaul/)
-2. Enable the mod in mods.json or via the bbport launcher UI.
-3. In bbport.ini, enable retro graphics options (optional):
+1. Place this directory inside your game launcher's 'mods/' folder.
+2. Enable the mod in mods.json or the mod manager UI.
+3. Enable retro graphics options in your engine configuration (optional):
    retro_mode = 1
    retro_dither = 1
    retro_point_filter = 1

@@ -43,7 +43,7 @@ def xor_bytes(a: bytes, b: bytes) -> bytes:
 
 
 def main():
-    default_mod = Path("../bbport-src/mods/Bloodborne Low-Poly Overhaul")
+    default_mod = Path("mods/Bloodborne Low-Poly Overhaul")
 
     parser = argparse.ArgumentParser(
         description="Create a unified XOR binary delta patch for Bloodborne: Low-Poly Overhaul."

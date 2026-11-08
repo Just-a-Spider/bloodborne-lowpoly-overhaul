@@ -16,13 +16,14 @@ else:
     args = []
 
 if len(args) < 2:
-    print("Usage: blender -b -P blender_process_parts.py -- <input.glb> <output.glb> [default_ratio] [category]")
+    print("Usage: blender -b -P blender_process_parts.py -- <input.glb> <output.glb> [default_ratio] [category] [keep_cloth]")
     sys.exit(1)
 
 input_glb = args[0]
 output_glb = args[1]
 default_ratio = float(args[2]) if len(args) > 2 else 0.25
 category = args[3] if len(args) > 3 else "armor"
+keep_cloth = (args[4].lower() in ("true", "1", "yes")) if len(args) > 4 else False
 
 import bpy
 
@@ -46,18 +47,25 @@ for obj in bpy.data.objects:
 
     # Determine ratio based on submesh semantic hints
     obj_name_lower = obj.name.lower()
+
+    if keep_cloth and "cloth" in obj_name_lower:
+        tris_new = tris_orig
+        total_after += tris_new
+        print(f"Preserved cloth submesh (keep_cloth=True): {obj.name:<32} ({tris_orig} tris)")
+        continue
+
     ratio = default_ratio
 
     if category == "weapon" or "wp_" in obj_name_lower:
-        ratio = max(0.30, default_ratio)
+        ratio = max(0.18, default_ratio)
     elif "cloth" in obj_name_lower:
-        ratio = 0.25
+        ratio = min(default_ratio, 0.08)
     elif any(k in obj_name_lower for k in ("hd_", "hat", "helm", "head", "bonnet")):
-        ratio = 0.20
+        ratio = min(default_ratio, 0.05) if tris_orig > 5000 else default_ratio
     elif any(k in obj_name_lower for k in ("am_", "arm", "glove", "gauntlet")):
-        ratio = 0.25
+        ratio = min(default_ratio, 0.06) if tris_orig > 5000 else default_ratio
     elif any(k in obj_name_lower for k in ("lg_", "leg", "boot", "trouser")):
-        ratio = 0.20
+        ratio = min(default_ratio, 0.06) if tris_orig > 5000 else default_ratio
 
     # Ensure small meshes (< 60 tris) don't get over-decimated
     if tris_orig < 60:
@@ -73,8 +81,9 @@ for obj in bpy.data.objects:
     bpy.context.view_layer.objects.active = obj
     try:
         bpy.ops.object.modifier_apply(modifier=mod.name)
-        # Ensure smooth vertex normals across all decimated polygons
-        bpy.ops.object.shade_smooth()
+        # Enforce crisp retro hard split normals (BAN shade_smooth to eliminate shiny plastic sheen)
+        for poly in obj.data.polygons:
+            poly.use_smooth = False
     except Exception as e:
         print(f"Warning: could not apply modifier on {obj.name}: {e}")
 

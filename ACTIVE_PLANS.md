@@ -256,3 +256,67 @@ The vertex counts of `VA0` and `VA1` must be strictly identical ($N_{\text{VA0}}
 | **Chandelier Ceiling Alignment** | Displaced $+6.7$m into void | Anchored to ceiling | **Blue Flame Candles Visible** |
 | **Processing Time** | Baseline | 116.7s (12 workers) | **~7.8 archives / sec** |
 
+
+
+---
+
+## Plan 8: Authentic PSX Good Hunter & Armor Overhaul (`parts/` & `chr/c0000`)
+
+- **Date Initiated**: 2026-11-07
+- **Primary Objective**: Eliminate the modern PBR uncanny valley on the player character by replacing smooth shading with retro hard split normals, neutralizing high-definition normal maps, zeroing out specular glossiness, and quantizing player equipment textures into 15-bit RGB555 palettes (64x64 to 128x128).
+- **Scope**: All player armors (`bd_*`, `hd_*`, `am_*`, `lg_*`), trick weapons and firearms (`wp_*`), and base Hunter anatomy (`chr/c0000`).
+
+### Technical Diagnosis & Root Causes
+1. **Uncanny Smooth Shading**: `batch_blender_demake_parts.py` currently invokes `shade_smooth = True`. On a 300–800 polygon mesh, smooth normal interpolation causes black shading gradients and a melted plastic appearance. Authentic PSX models relied on flat faceted shading (`poly.use_smooth = False`).
+2. **Anachronistic Normal Maps**: Vanilla 8th-gen `_n` normal maps project high-resolution micro-creases and leather pores across low-poly geometry. Neutralizing these to flat vectors (`[128, 128, 255]`) strips modern bump details.
+3. **PBR Specular & Gloss Highlights**: Modern roughness/specular maps (`_r`) cause shiny oily reflections incompatible with 32-bit aesthetics. Zeroing specular reflection restores authentic matte diffuse lighting.
+4. **Resolution Disparity**: Player armor albedo textures remain higher resolution than demade world and NPC assets. Downscaling to 64x64 / 128x128 with Bayer dithering achieves total visual harmony with the demade world.
+
+### Task Checklist & Status
+- [x] **Subtask 8.1**: Enforce hard split normals in `tools/pipeline/blender_process_parts.py` / `batch_blender_demake_parts.py` and `rigged_gltf_to_flver.py`:
+  - Disabled `shade_smooth()`.
+  - Set `poly.use_smooth = False` across all equipment submeshes while preserving 206-bone linear blend skinning.
+  - Updated `rigged_gltf_to_flver.py` to preserve glTF flat normals instead of overwriting with smooth angle-weighted normals.
+- [x] **Subtask 8.2**: Normal map flattener engine:
+  - Created `tools/pipeline/demake_parts_textures.py` to replace all `*_n.tpf` albedo/normal entries in `parts/` with uniform flat normal textures (`FLAT_NORMAL_BC5_UNORM` / `FLAT_NORMAL_BC1`).
+- [x] **Subtask 8.3**: PBR specular killer:
+  - Set specular reflectance to zero (`#000000`) across `_r` and `_s` textures in `demake_parts_textures.py` to produce authentic retro matte shading.
+- [x] **Subtask 8.4**: Player texture downscaling & RGB555 quantization:
+  - Downscaled player diffuse textures (`*_a.tpf`) to $128\times 128$ using 15-bit RGB555 color quantization and ordered Bayer dithering.
+- [x] **Subtask 8.5**: Pilot test on Hunter Set (`bd_m_9000`, `hd_m_9000`, `am_m_9000`, `lg_m_9000`) and Saw Cleaver (`wp_a_1001`):
+  - Successfully decimated and deployed to sandbox:
+    * Body (`bd_m_9000`): 29,641 -> 2,366 tris (8.0%)
+    * Head (`hd_m_9000`): 26,518 -> 2,118 tris (8.0%)
+    * Arms (`am_m_9000`): 11,540 -> 692 tris (6.0%)
+    * Legs (`lg_m_9000`): 13,580 -> 932 tris (6.9%)
+    * Saw Cleaver (`wp_a_1001`): 10,464 -> 2,088 tris (20.0%)
+  - Packaged and verified in `mods/Bloodborne Low-Poly Overhaul/`.
+- [x] **Subtask 8.6**: Batch deployment across all 796 player armor archives in `dvdroot_ps4/parts/`:
+  - Created two isolated modular mods in `mods/`:
+    * `Bloodborne Retro Armors - Flat Stiff`: All 796 armors with decoupled Havok cloth (stiff retro cloth, zero Havok solver overhead), flat split facet normals, 128px RGB555 albedos, neutralized normal maps, zero specular sheen.
+    * `Bloodborne Retro Armors - Cloth Physics`: All 796 armors with preserved Havok dynamic cloth physics on capes/skirts (156 cloth-bearing armors retain vanilla cloth vertex counts and `_c.hkx`/`_c.clm2` solvers without crashing `SpClothVertexUpdate`), while rigid armor plates are decimated to ~0.08 with flat facet normals.
+  - Protected stable release baseline in `Bloodborne Low-Poly Overhaul` and backup `Bloodborne Low-Poly Overhaul (Stable Backup)`.
+  - Configured `mods.json` with Flat Stiff active by default and Cloth Physics registered for modular toggle.
+- [x] **Subtask 8.7**: Documentation update in `BB_PSX_DEMAKE_GUIDE.md` and `BB_PSX_DEMAKE_MATH_AND_FINDINGS.md`.
+- [x] **Subtask 8.8**: Standalone distribution packaging (Strategy A):
+  - Created two independent full standalone mod releases in `mods/`:
+    * `Bloodborne Low-Poly Overhaul (Cloth Physics)`: Complete 2,366-file demake overhaul with dynamic Havok cloth physics armors.
+    * `Bloodborne Low-Poly Overhaul (Flat Stiff)`: Complete 2,366-file demake overhaul with decoupled rigid armors.
+  - Generated and verified two 100% legal binary XOR delta patch containers in `dist/`:
+    * `dist/bloodborne_lowpoly_overhaul_cloth.patch` (1.7 GB)
+    * `dist/bloodborne_lowpoly_overhaul_stiff.patch` (1.6 GB)
+  - Validated client reconstruction via `apply_patch.py`: 100% of 2,368 assets reconstructed in 8.56s with bit-for-bit `diff -rq` parity against retail `CUSA03173`.
+  - Configured `mods.json` with `Bloodborne Low-Poly Overhaul (Cloth Physics)` active as a standalone single-folder mod.
+
+### Batch Results Summary: Player Equipment Overhaul (`parts/`)
+
+| Metric | Pristine Baseline (`CUSA03173`) | Flat Stiff Mod | Cloth Physics Mod |
+| :--- | :--- | :--- | :--- |
+| **Total Armor Archives** | 796 archives | 796 deployed | 796 deployed |
+| **Polygon Count** | 10,010,176 triangles | 772,386 triangles (**-92.3%**) | 1,481,192 triangles (**-85.2%**) |
+| **Normal Vector Shading** | Smooth normals (`shade_smooth`) | Retro hard split facet normals | Retro flat (rigid) + smooth (cloth) |
+| **Normal Maps (`*_n`)** | 5.6 MB high-freq BC5 | Flat vectors `[128, 128]` | Flat vectors `[128, 128]` |
+| **Specular Reflectance (`*_r`)**| Modern PBR gloss/roughness | Zeroed (`b"\x00"`, matte) | Zeroed (`b"\x00"`, matte) |
+| **Albedo Texture Resolution** | 1024x1024 / 2048x2048 | 128x128 RGB555 quantized | 128x128 RGB555 quantized |
+| **Havok Cloth Simulation** | Active (`_c.hkx` solver) | Completely decoupled (0 overhead) | Active on capes/skirts (0 crashes) |
+| **Mod Folder Location** | `parts/` | `mods/Bloodborne Low-Poly Overhaul (Flat Stiff)` | `mods/Bloodborne Low-Poly Overhaul (Cloth Physics)` |

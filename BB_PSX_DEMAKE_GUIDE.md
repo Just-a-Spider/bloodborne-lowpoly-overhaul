@@ -233,19 +233,19 @@ Distributing modified `.dcx` files directly risks copyright strikes from Sony/Fr
 
 ### Developer CLI (Generate Patch):
 ```bash
-uv run python tools/pipeline/create_psx_patch.py \
+uv run python tools/pipeline/create_patch.py \
   --vanilla CUSA03173 \
-  --mod "../bbport-src/mods/Bloodborne PSX Demake" \
-  --out dist/bloodborne_psx_demake.patch
+  --mod "mods/Bloodborne Low-Poly Overhaul" \
+  --out dist/bloodborne_lowpoly_overhaul.patch
 ```
 *Performance: 25.2s total processing time, 16.4s full in-memory SHA256 verification, < 150 MB RAM.*
 
 ### Client / End-User CLI (Reconstruct Mod on Any PC):
 ```bash
-python3 apply_psx_patch.py \
+python3 apply_patch.py \
   --game /path/to/CUSA03173 \
-  --patch bloodborne_psx_demake.patch \
-  --out "Bloodborne PSX Demake"
+  --patch bloodborne_lowpoly_overhaul.patch \
+  --out "Bloodborne Low-Poly Overhaul"
 ```
 *Performance: 7.01s total reconstruction time, 100.000000% bit-for-bit SHA256 parity across all 2,669 files.*
 
@@ -254,7 +254,7 @@ python3 apply_psx_patch.py \
 uv run python tools/pipeline/build_from_scratch.py \
   --vanilla CUSA03173 \
   --psx CUSA03173-PSX \
-  --mod-out "../bbport-src/mods/Bloodborne PSX Demake"
+  --mod-out "mods/Bloodborne Low-Poly Overhaul"
 ```
 
 ---
@@ -313,8 +313,40 @@ To support 2GB VRAM cards and low-spec laptop iGPUs:
 - **Fix / Workaround**:
   - Registered `o32205*`, `o32200*`, `o3224*`, `o3210*`, `o325*`, and `o0099*` under explicit pristine bypass in `tools/pipeline/batch_blender_demake_obj.py`.
   - Re-executed batch pipeline across `o32*` and `o0099*`: 77 multi-bone assemblies bypassed pristine, 20 single-bone rigid props (chairs, trays, bottles) cleanly decimated to 20% budget.
-  - Repackaged mod via `tools/pipeline/package_mod.py`, automatically purging 67 stale/broken assets from `bbport-src/mods/Bloodborne Low-Poly Overhaul/`.
+  - Repackaged mod via `tools/pipeline/package_mod.py`, automatically purging 67 stale/broken assets from `mods/Bloodborne Low-Poly Overhaul/`.
 
 ### 12.3 Soulstruct / Constrata Retail MSB Padding Assertions
 - **Root Cause**: In retail Bloodborne MSBs (e.g. `m24_02_00_00.msb.dcx`), FromSoftware stored non-zero configuration bytes in binary struct fields that Soulstruct models as `binary_pad` (`MSBSpawnerEvent._pad1` and `MSBPlatoonEvent._pad1`). Constrata's `validate()` asserts `value == char * length` and throws fatal `BinaryFieldValueError`.
 - **Fix / Workaround**: Modified `constrata/metadata.py` line 106 to bypass strict equality checks on asserted padding fields, preventing crashes when inspecting retail Bloodborne map studio binary archives.
+
+---
+
+## 13. Player Equipment & Retro Armor Demake Pipeline (`parts/`)
+
+### 13.1 Core Architecture
+The player equipment demake pipeline transforms high-definition 8th-gen Bloodborne armors (`bd_*`, `hd_*`, `am_*`, `lg_*`) into authentic 32-bit PSX assets:
+1. **Flat Facet Shading**: Blender headless disables `shade_smooth` and sets `poly.use_smooth = False` to enforce crisp hard split normals.
+2. **Normals Preservation**: `mesh_decimator.py` and `rigged_gltf_to_flver.py` accept custom glTF normals to avoid forcibly re-smoothing facet edges.
+3. **PBR Sheen Elimination**: Specular reflectance and gloss (`_r`, `_s`) are zeroed out (`b"\x00"`), replacing modern oily highlights with authentic matte diffuse lighting.
+4. **Normal Map Neutralization**: Normal maps (`_n`) are replaced with flat vectors (`FLAT_NORMAL_BC5_UNORM` / `FLAT_NORMAL_BC1`).
+5. **Palette Stepping**: Albedo textures (`_a`) are quantized to 15-bit RGB555 palettes and scaled to $128\times 128$.
+
+### 13.2 Tooling & CLI Usage
+- **Batch Armor Demake Engine**: [`tools/pipeline/batch_blender_demake_parts.py`](tools/pipeline/batch_blender_demake_parts.py)
+  ```bash
+  # Flat Stiff Edition (All 796 armors, decoupled cloth, maximum performance)
+  uv run python tools/pipeline/batch_blender_demake_parts.py --armors-only \
+      --out-dir "mods/Bloodborne Low-Poly Overhaul (Flat Stiff)/dvdroot_ps4/parts" --workers 12
+
+  # Havok Cloth Physics Edition (Preserves dynamic capes and skirts on 156 cloth armors)
+  uv run python tools/pipeline/batch_blender_demake_parts.py --cloth-only --keep-cloth \
+      --out-dir "mods/Bloodborne Low-Poly Overhaul (Cloth Physics)/dvdroot_ps4/parts" --workers 12
+  ```
+- **Blender Headless Processor**: [`tools/pipeline/blender_process_parts.py`](tools/pipeline/blender_process_parts.py)
+- **Texture Stripper Engine**: [`tools/pipeline/demake_parts_textures.py`](tools/pipeline/demake_parts_textures.py)
+
+### 13.3 Mod Configuration & Standalone Editions
+Both editions are packaged as complete standalone mods:
+- `Bloodborne Low-Poly Overhaul (Cloth Physics)`: Preserves dynamic fluttering capes and skirts with retro low-poly armor meshes and hard split facet normals.
+- `Bloodborne Low-Poly Overhaul (Flat Stiff)`: 100% decoupled retro cloth and maximum performance.
+

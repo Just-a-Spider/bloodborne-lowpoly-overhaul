@@ -994,7 +994,31 @@ For props relying on alpha transparency:
 
 ---
 
-## 26. Static Prop Model-Space Pre-Baking for Port / Engine Renderers
+## 29. Player Equipment & Armor Retro Demake Architecture (`parts/`)
+
+### 29.1. The Modern PBR Uncanny Valley Root Cause
+Player equipment assets in Bloodborne presented four major aesthetic contradictions with the 32-bit PSX aesthetic:
+1. **Smooth Shading on Low-Poly Geometry**: Applying smooth normal interpolation (`shade_smooth`) across decimated surfaces ($300\text{--}800$ triangles) created black lighting gradients and an unnatural "melted plastic" appearance. Authentic 90s hardware evaluated flat per-polygon lighting.
+2. **High-Frequency Normal Maps (`*_n`)**: Vanilla $2048\times 2048$ normal maps projected micro-wrinkles, fabric stitching, and leather pores across retro meshes.
+3. **PBR Specular & Gloss Highlights (`*_r`, `*_s`)**: Physically based roughness maps produced oily specular sheens incompatible with early 3D console graphics.
+4. **Albedo Resolution Discrepancy**: Player armors remained at $1024\times 1024$ or $2048\times 2048$, clashing with low-resolution world geometry.
+
+### 29.2. Hard Split Facet Shading & Custom Normals Preservation
+- **Blender Pipeline**: In `blender_process_parts.py`, `shade_smooth()` was replaced with `poly.use_smooth = False`, enforcing hard split vertex normals along triangle edges.
+- **Custom Normals Preservation**: In `mesh_decimator.py`, `compute_angle_weighted_normals_and_tangents()` was refactored to accept `custom_normals`. When `use_gltf_normals=True` is passed to `rigged_gltf_to_flver.py`, the compiler preserves the discrete flat normals exported by Blender rather than recalculating smoothed angle-weighted normals.
+
+### 29.3. The Havok Cloth Physics Constraint (`SpClothVertexUpdate`)
+FromSoftware's Havok cloth physics engine enforces strict topological invariance:
+$$\text{Vertices}_{\text{FLVER submesh}} \equiv \text{Vertices}_{\text{Havok Cloth Mesh (_c.hkx)}}$$
+- Decimating a cloth submesh changes vertex counts, triggering an assertion failure or memory fault in `SpClothVertexUpdate`.
+- **Flat Stiff Edition**: Swaps all `*_Cloth.mtd` material definitions to standard skeletal-driven shaders (`*_e.mtd`) via `decouple_cloth_mtd()` and strips `_c.hkx` and `_c.clm2` from the `.partsbnd.dcx` container. Triangles are reduced by 92.3% with zero physics solver overhead.
+- **Havok Cloth Physics Edition**: Selectively filters submeshes in `compile_glb_to_flver()`. Meshes referencing `_Cloth.mtd` or named `*cloth*` retain 100% bit-exact vanilla vertex arrays, face sets, and bone skinning weights, while rigid armor geometry (breastplates, gauntlets, boots, buckles) is decimated to ~8% with flat split normals. `_c.hkx` and `_c.clm2` are preserved, allowing dynamic capes and skirts to flutter naturally without physics crashes.
+
+### 29.4. Texture Demake Engine (`demake_parts_textures.py`)
+- **Normal Map Flattening**: Replaces BC5 UNORM normal maps with uniform blocks of `FLAT_NORMAL_BC5_UNORM` (`[128, 128]`) and BC1 normal maps with `FLAT_NORMAL_BC1` (`[128, 128, 255]`), eliminating modern micro-bump mapping.
+- **PBR Gloss Elimination**: Zeroes out `_r` and `_s` textures (`b"\x00"`), replacing PBR specular reflection with authentic retro matte diffuse shading.
+- **15-Bit RGB555 Quantization**: Downsamples albedo maps (`_a`) to $128\times 128$ in pixel space using 5 bits per channel (32 levels per channel), recreating authentic 32-bit console color palettes.
+
 
 ### 26.1. The Bone Hierarchy Discrepancy in PC Ports
 In native Bloodborne on PS4, the engine's scene graph computes world matrices for all bones $\mathbf{M}_{\text{bone}}$ and multiplies each submesh by its `default_bone_index`.

@@ -3,7 +3,7 @@
 build_from_scratch.py - Master Pipeline Orchestrator for Bloodborne: Low-Poly Overhaul.
 
 Automates the complete algorithmic conversion pipeline from pristine CUSA03173/
-into CUSA03173-PSX/ and packages the final standalone bbport mod.
+into CUSA03173-PSX/ and packages the final standalone mod.
 
 Execution Stages:
   1. Parts Demake (weapons and armor)
@@ -79,9 +79,9 @@ def verify_ladder_parity(vanilla_dir: Path, psx_dir: Path) -> bool:
 
 
 def main():
-    default_mod = Path("../bbport-src/mods/Bloodborne Low-Poly Overhaul")
-    if not default_mod.is_dir() and Path("../bbport-src/mods/Bloodborne PSX Demake").is_dir():
-        default_mod = Path("../bbport-src/mods/Bloodborne PSX Demake")
+    default_mod = Path("mods/Bloodborne Low-Poly Overhaul")
+    if not default_mod.is_dir() and Path("mods/Bloodborne PSX Demake").is_dir():
+        default_mod = Path("mods/Bloodborne PSX Demake")
 
     parser = argparse.ArgumentParser(description="Master Pipeline Orchestrator for Bloodborne: Low-Poly Overhaul.")
     parser.add_argument(

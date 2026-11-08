@@ -43,10 +43,11 @@ from soulstruct.flver.core import FLVER  # noqa: E402
 
 from flver_to_rigged_gltf import flver_to_rigged_glb  # noqa: E402
 from rigged_gltf_to_flver import compile_glb_to_flver  # noqa: E402
+from demake_parts_textures import process_single_tpf_bytes  # noqa: E402
 
 VANILLA_PARTS_DIR = REPO_ROOT / "CUSA03173" / "dvdroot_ps4" / "parts"
 SANDBOX_PARTS_DIR = REPO_ROOT / "CUSA03173-PSX" / "dvdroot_ps4" / "parts"
-STAGE_DIR = Path("/tmp/parts_blender_stage")
+STAGE_DIR = Path(tempfile.gettempdir()) / "parts_blender_stage"
 SNAP_SUFFIX = ".snap_pre_blender"
 
 ALLOWED_PREFIXES = ("bd_", "hd_", "am_", "lg_", "wp_")
@@ -59,6 +60,9 @@ def process_single_parts_archive(
     ratio_weapon: float,
     deploy: bool,
     snapshot: bool,
+    keep_cloth: bool = False,
+    out_dir: Optional[str] = None,
+    demake_textures: bool = True,
 ) -> Tuple[str, bool, int, int, str]:
     """Processes a single partsbinder file through Blender, returning (filename, success, orig_tris, new_tris, msg)."""
     vanilla_path = VANILLA_PARTS_DIR / filename
@@ -79,8 +83,8 @@ def process_single_parts_archive(
     try:
         b_vanilla = Binder.from_path(str(vanilla_path))
 
-        # Preserve existing sliced TPF from sandbox if present
-        if sandbox_path.exists():
+        # Preserve existing sliced TPF from sandbox if present and not re-demaking textures
+        if not demake_textures and sandbox_path.exists():
             try:
                 b_sandbox = Binder.from_path(str(sandbox_path))
                 psx_tpfs = {
@@ -127,6 +131,7 @@ def process_single_parts_archive(
             in_glb.write_bytes(glb_data)
 
             # 2. Run Headless Blender 5.2.3 Decimation & Shading
+            keep_cloth_flag = "true" if (keep_cloth and not is_weapon) else "false"
             cmd_blender = [
                 "/usr/bin/blender",
                 "-b",
@@ -137,40 +142,63 @@ def process_single_parts_archive(
                 str(out_glb),
                 str(target_ratio),
                 category,
+                keep_cloth_flag,
             ]
             res = subprocess.run(cmd_blender, capture_output=True, text=True)
             if res.returncode != 0 or not out_glb.exists():
                 return filename, False, total_orig_tris, total_new_tris, f"Blender failed on {flv_stem}: {res.stderr[-300:]}"
 
-            # 3. Recompile demade glTF to native Bloodborne FLVER
-            c_flv = compile_glb_to_flver(out_glb, flv_orig, decouple_cloth=not is_weapon)
+            # 3. Recompile demade glTF to native Bloodborne FLVER (preserving Blender flat split normals)
+            decouple = not is_weapon and not keep_cloth
+            c_flv = compile_glb_to_flver(
+                out_glb,
+                flv_orig,
+                decouple_cloth=decouple,
+                use_gltf_normals=True,
+                keep_cloth=keep_cloth and not is_weapon,
+            )
             tris_new = sum(len(m.face_sets[0].vertex_indices) for m in c_flv.meshes if m.face_sets)
             total_new_tris += tris_new
 
             # Replace FLVER in binder
             entry.set_uncompressed_data(c_flv.to_bytes())
 
-        # If armor, strip Havok cloth physics files (_c.hkx and _c.clm2)
-        if not is_weapon:
+        # If armor and decoupling cloth, strip Havok cloth physics files (_c.hkx and _c.clm2)
+        if not is_weapon and not keep_cloth:
             b_vanilla.entries = [
                 e for e in b_vanilla.entries
                 if not (e.name.lower().endswith("_c.hkx") or e.name.lower().endswith("_c.clm2"))
             ]
 
-        if flver_count == 0:
-            return filename, True, total_orig_tris, total_new_tris, "No active FLVERs (empty binder)"
+        # In-place texture demaking (albedo quantization, normal map neutralizing, specular killing)
+        if demake_textures:
+            for entry in b_vanilla.entries:
+                if entry.name.lower().endswith(".tpf"):
+                    try:
+                        raw_tpf = entry.get_uncompressed_data()
+                        tpf_demade = process_single_tpf_bytes(raw_tpf, target_dim=128)
+                        entry.set_uncompressed_data(bytes(tpf_demade))
+                    except Exception as e:
+                        print(f"Warning: TPF processing failed for {entry.name} in {filename}: {e}")
 
-        # Write output (snapshotting first if deploying)
-        target_write_path = sandbox_path if deploy else stage_path
+        # Write output (snapshotting first if deploying to sandbox)
+        if out_dir:
+            target_write_path = Path(out_dir) / filename
+        elif deploy:
+            target_write_path = sandbox_path
+        else:
+            target_write_path = stage_path
+
         target_write_path.parent.mkdir(parents=True, exist_ok=True)
 
-        if deploy and snapshot and sandbox_path.exists():
+        if not out_dir and deploy and snapshot and sandbox_path.exists():
             snap_path = sandbox_path.with_name(sandbox_path.name + SNAP_SUFFIX)
             if not snap_path.exists():
                 shutil.copy2(sandbox_path, snap_path)
 
         b_vanilla.write(str(target_write_path))
-        return filename, True, total_orig_tris, total_new_tris, "OK"
+        msg = "OK (empty/dummy binder)" if flver_count == 0 else "OK"
+        return filename, True, total_orig_tris, total_new_tris, msg
 
     except Exception as ex:
         return filename, False, 0, 0, str(ex)
@@ -194,13 +222,18 @@ def restore_snapshots(only_glob: str) -> None:
 def main():
     parser = argparse.ArgumentParser(description="Multi-Threaded Blender Demake Engine for Player Equipment & Weapons")
     parser.add_argument("--all", action="store_true", help="Process all player equipment and weapon files")
+    parser.add_argument("--armors-only", action="store_true", help="Process only armor archives (bd_, hd_, am_, lg_)")
+    parser.add_argument("--cloth-only", action="store_true", help="Process only armor archives containing Havok cloth (_c.hkx)")
     parser.add_argument("--only", type=str, default="", help="Glob pattern filter (e.g. '*9000*', 'wp_a_1001*')")
-    parser.add_argument("--ratio-armor", type=float, default=0.22, help="Decimation ratio for armor (default: 0.22)")
-    parser.add_argument("--ratio-weapon", type=float, default=0.35, help="Decimation ratio for weapons (default: 0.35)")
+    parser.add_argument("--ratio-armor", type=float, default=0.08, help="Decimation ratio for armor (default: 0.08)")
+    parser.add_argument("--ratio-weapon", type=float, default=0.20, help="Decimation ratio for weapons (default: 0.20)")
     parser.add_argument("--workers", type=int, default=8, help="Number of parallel worker processes (default: 8)")
     parser.add_argument("--deploy", action="store_true", help="Deploy directly to CUSA03173-PSX (default: dry run to /tmp)")
     parser.add_argument("--snapshot", action="store_true", default=True, help="Create snapshot before overwriting sandbox")
     parser.add_argument("--restore", action="store_true", help="Restore all snapshots from *.snap_pre_blender")
+    parser.add_argument("--keep-cloth", action="store_true", help="Preserve Havok cloth physics (do not decouple cloth or strip .hkx)")
+    parser.add_argument("--out-dir", type=str, default="", help="Custom output directory for processed files")
+    parser.add_argument("--no-demake-textures", action="store_true", help="Skip in-place texture demaking")
 
     args = parser.parse_args()
 
@@ -208,11 +241,13 @@ def main():
         restore_snapshots(args.only)
         return
 
-    if not args.all and not args.only:
-        parser.error("Specify --all or --only (e.g. --only '*9000*')")
+    if not args.all and not args.only and not args.armors_only and not args.cloth_only:
+        parser.error("Specify --all, --armors-only, --cloth-only, or --only (e.g. --only '*9000*')")
+
+    prefixes = ("bd_", "hd_", "am_", "lg_") if (args.armors_only or args.cloth_only) else ALLOWED_PREFIXES
 
     candidate_files = []
-    for prefix in ALLOWED_PREFIXES:
+    for prefix in prefixes:
         for p in VANILLA_PARTS_DIR.glob(f"{prefix}*.partsbnd.dcx"):
             candidate_files.append(p.name)
 
@@ -224,14 +259,38 @@ def main():
     if args.only:
         candidate_files = [f for f in candidate_files if fnmatch.fnmatch(f, args.only)]
 
+    if args.cloth_only:
+        print("Filtering candidate files for Havok cloth physics (_c.hkx)...")
+        cloth_files = []
+        for f in candidate_files:
+            try:
+                b = Binder.from_path(str(VANILLA_PARTS_DIR / f))
+                if any(e.name.lower().endswith("_c.hkx") for e in b.entries):
+                    cloth_files.append(f)
+            except Exception:
+                pass
+        candidate_files = cloth_files
+
     candidate_files.sort()
 
     if not candidate_files:
         print("No files matched filter. Exiting.")
         sys.exit(1)
 
-    mode = "DEPLOY -> CUSA03173-PSX" if args.deploy else f"DRY RUN -> {STAGE_DIR}"
+    if args.out_dir:
+        mode = f"OUTPUT -> {args.out_dir}"
+        Path(args.out_dir).mkdir(parents=True, exist_ok=True)
+    elif args.deploy:
+        mode = "DEPLOY -> CUSA03173-PSX"
+    else:
+        mode = f"DRY RUN -> {STAGE_DIR}"
+        STAGE_DIR.mkdir(parents=True, exist_ok=True)
+
+    cloth_mode = "HAVOK CLOTH PHYSICS PRESERVED" if args.keep_cloth else "CLOTH DECOUPLED (STIFF)"
+    tex_mode = "TEXTURE DEMAKE ENABLED" if not args.no_demake_textures else "TEXTURE DEMAKE DISABLED"
+
     print(f"=== Multi-Threaded Blender Parts Demake ({len(candidate_files)} files) [{mode}] ===")
+    print(f"  Mode         : {cloth_mode} | {tex_mode}")
     print(f"  Armor Ratio  : {args.ratio_armor}")
     print(f"  Weapon Ratio : {args.ratio_weapon}")
     print(f"  Workers      : {args.workers}")
@@ -242,9 +301,6 @@ def main():
     total_orig = 0
     total_new = 0
 
-    if not args.deploy:
-        STAGE_DIR.mkdir(parents=True, exist_ok=True)
-
     with ProcessPoolExecutor(max_workers=args.workers) as executor:
         futures = {
             executor.submit(
@@ -254,6 +310,9 @@ def main():
                 args.ratio_weapon,
                 args.deploy,
                 args.snapshot,
+                args.keep_cloth,
+                args.out_dir,
+                not args.no_demake_textures,
             ): fname
             for fname in candidate_files
         }
@@ -283,8 +342,8 @@ def main():
     print(f"  Processed : {success_count} / {len(candidate_files)} (Failed: {fail_count})")
     print(f"  Triangles : {total_orig:,} -> {total_new:,} ({overall_pct:.1f}%, saved {saved:,} tris)")
 
-    if not args.deploy:
-        print("\nDry run complete. Use --deploy to write directly to CUSA03173-PSX.")
+    if not args.deploy and not args.out_dir:
+        print("\nDry run complete. Use --deploy or --out-dir to write output files.")
 
 
 if __name__ == "__main__":
