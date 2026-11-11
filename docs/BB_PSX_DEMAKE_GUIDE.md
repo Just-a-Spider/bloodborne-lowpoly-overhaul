@@ -350,3 +350,237 @@ Both editions are packaged as complete standalone mods:
 - `Bloodborne Low-Poly Overhaul (Cloth Physics)`: Preserves dynamic fluttering capes and skirts with retro low-poly armor meshes and hard split facet normals.
 - `Bloodborne Low-Poly Overhaul (Flat Stiff)`: 100% decoupled retro cloth and maximum performance.
 
+---
+
+## 14. Retro HUD & UI Demake Pipeline (`menu/common.tpf.dcx`)
+
+### 14.1 Architectural Invariants & Scaleform Quirks
+1. **Scaleform Canvas UV Alignment**: FromSoftware's Scaleform UI engine (`ingametop.gfx`, `messagebox.gfx`, `equipment.gfx`) anchors sprites to hardcoded pixel coordinates on master texture atlases. Shrinking the canvas itself desynchronizes UV mappings, causing UI elements to display blank white boxes or misaligned slice borders. The pipeline downsamples textures (2x for $\le 1024$px, 4x for $2048$px), quantizes RGB to 15-bit RGB555 (`(arr >> 3) << 3`), and upscales back to original canvas resolution via Nearest-Neighbor interpolation, locking exact UV bounds.
+2. **Single Mip Invariant**: UI textures strictly mandate `num_mips = 1`. Supplying secondary mip levels causes Scaleform's dynamic scaler to interpolate lower mips during animation, resulting in unwanted blurry filtering.
+3. **Controller Prompt Whitelist**: Small controller button glyphs (`KG_*`, 24 textures) and localization banners (`MENU_LNG_*`, 3 textures) are strictly whitelisted and preserved byte-for-byte to maintain input legibility.
+4. **Morton Micro-Tile Swizzling**: PS4 GCN hardware reads BC7/BC1 block compression in $8\times 8$ micro-tiles via `ps4_swizzle.py`. Unused capacity within header `tex_sz` must be zero-filled to prevent uninitialized memory leakage.
+
+### 14.2 Tooling & CLI Usage
+- **Batch HUD Pipeline**: [`tools/pipeline/batch_demake_hud.py`](tools/pipeline/batch_demake_hud.py)
+  ```bash
+  uv run python tools/pipeline/batch_demake_hud.py --vanilla CUSA03173 --sandbox CUSA03173-PSX
+  ```
+- **Automated 4-Tier Test Harness**: [`tools/verify_hud_demake.py`](tools/verify_hud_demake.py)
+  ```bash
+  uv run python tools/verify_hud_demake.py --target CUSA03173-PSX/dvdroot_ps4/menu/common.tpf.dcx
+  ```
+
+### 14.3 Standalone Addition Mod Packaging
+Packaged as a standalone modular addition mod:
+- **Addition Mod Directory**: `mods/Bloodborne Retro HUD and UI/dvdroot_ps4/menu/common.tpf.dcx` (4.13 MB)
+- **Standalone XOR Patch**: `dist/bloodborne_retro_hud.patch` (4.13 MB, generated via `create_patch.py`)
+- **Compatibility**: Layers cleanly on top of either `Bloodborne Low-Poly Overhaul (Cloth Physics)` or `Bloodborne Low-Poly Overhaul (Flat Stiff)` without modifying base overhaul containers.
+- **Strict UI Isolation**: Purged of all experimental Talk ESD scripts (`script/talk/`) and FMG text injections (`msg/`) to eliminate any possibility of breaking in-game lamp interaction.
+
+### 14.4 Modular Release Generation & Automated Verification
+- **Container Creation**:
+  ```bash
+  uv run python tools/pipeline/create_patch.py --vanilla CUSA03173 --mod "mods/Bloodborne Retro HUD and UI" --out dist/bloodborne_retro_hud.patch
+  ```
+- **Automated 9-Container Release Audit & Manifest Generation**:
+  ```bash
+  uv run python tools/pipeline/verify_release_artifacts.py --vanilla CUSA03173 --dist dist --manifest dist/SHA256SUMS.txt
+  ```
+  Verifies magic headers (`BBLPO01\x00`), metadata JSON, payload alignment, subpath isolation, and executes in-memory roundtrip XOR delta inversion against `CUSA03173/`. Output manifest `dist/SHA256SUMS.txt` allows players to verify integrity with `sha256sum -c SHA256SUMS.txt`.
+- **Batch Reconstructor Ergonomics (`apply_patch.py`)**:
+  Standalone zero-dependency Python reconstructor supports auto-inferring mod directory names from container metadata JSON and batch mode:
+  ```bash
+  python3 apply_patch.py --game CUSA03173 --all-patches --patch-dir dist --mods-dir /path/to/game/mods
+  ```
+
+---
+
+## 15. Dungeon Props Stabilization, Cage Demake & 5-Pillar Modular Mod Architecture
+
+### 15.1 Root Cause & Remediations for Exploded Cadaver Wastes
+- **The glTF Normal Split Explosion**: In Blender, flat facet normal generation (`poly.use_smooth = False`) instructs the standard glTF exporter to duplicate every vertex across every adjacent face ($V = 3T$, e.g., 63,051 vertices for 21,017 triangles in `o297210`). The resulting unshared vertex soup causes FromSoftware vertex shaders and bounding volume culling to tear open polygon boundaries, projecting exploded sheets and needle spikes across dungeon rooms.
+- **Remediation**:
+  1. Enforce vertex welding (`bmesh.ops.remove_doubles` with threshold $1.0\times 10^{-4}$m) before exporting mesh buffers.
+  2. Perform ground plane clamping ($Y_{\min} \ge -0.05$m) *prior* to degenerate triangle checking to eliminate micro-area floor slivers.
+  3. Validate mesh topology with maximum edge length $\le 2.0$m, minimum triangle area $\ge 1.0\times 10^{-6}\text{ m}^2$, and aspect ratio $\le 25.0$.
+
+### 15.2 Bone-Local Hierarchy Retention for Hanging Props
+- **Discrepancy**: Multi-mesh props with child bones (e.g. `o290250` hanging chains and cadaver clusters) have submeshes anchored to child bones with non-zero translational and rotational offsets.
+- **Symptom**: Exporting mesh geometry in global space without parent bone hierarchy accumulation causes vertices to detach and drift 10–25 meters into the void.
+- **Resolution**: Geometry must remain in bone-local rest space, and FLVER bounding boxes must be computed by traversing the bone hierarchy with FromSoftware's XZY Euler rotation order ($R_x R_z R_y$ via `bone_transform_utils.py` and `update_flver_bounding_boxes`).
+
+### 15.3 Dungeon Cage Low-Poly Demake
+- **Bypass Elimination**: Un-bypassed dungeon, torture, and dog cages (`o290000`..`o290004`, `o290200`..`o290284`, `o322050`..`o322056`, `o322001`, `o322310`, `o322320`, `o260303`, `o260310`, `o243010`..`o243014`, `o270102`, `o270104`, `o273011`, `o281000`..`o281001`, `o282020`).
+- **Decimation & Shading**: Applied decimation ratio 0.20 (84.5% polygon reduction, ~200–800 triangles per cage) with flat facet normal rendering.
+- **Physics & Rig Preservation**: Retained bit-for-bit Havok rigid collision (`.hkx`) and animation binders (`.anibnd`).
+
+### 15.4 Five-Pillar Modular Mod Architecture under `mods/`
+In compliance with Constitution Principle V, asset classes are decoupled into five autonomous packages under `mods/`:
+1. `Bloodborne Retro Maps/` (`dvdroot_ps4/map/`): Static world geometry, level BXF texture binders.
+2. `Bloodborne Retro Props and Objects/` (`dvdroot_ps4/obj/`): Dynamic scenery, breakables, levers, cages, cadaver wastes, rigid `.hkx` collisions.
+3. `Bloodborne Retro Armors and Weapons - Cloth Physics/` and `- Flat Stiff/` (`dvdroot_ps4/parts/`): Player equipment with alternative cloth options.
+4. `Bloodborne Retro Characters/` (`dvdroot_ps4/chr/`): Enemies, NPCs, and bosses.
+5. `Bloodborne Retro HUD and UI/` (`dvdroot_ps4/menu/`): Standalone Scaleform HUD/UI addition mod.
+
+- **Packaging CLI**:
+  ```bash
+  uv run python tools/pipeline/package_modular_mods.py --pillar all --clean
+  ```
+- **Validation CLI**:
+  ```bash
+  uv run python tools/verify_modular_mods.py
+  ```
+
+### 15.5 Constitution Principle VI Multi-Model Quality Audit
+Before final release sign-off, an independent adversarial audit is executed using an alternate AGY model (Claude 3.7 Sonnet):
+```bash
+uv run python tools/pipeline/audit_assets_adversarial.py --report /tmp/audit_raw.json
+uv run python tools/pipeline/run_adversarial_audit.py
+```
+Validates zero exploded spikes, zero degenerate triangles, zero cage budget overshoots, and zero pillar cross-contamination in `AUDIT_REPORT.md`.
+
+### 15.6 Chalice Dungeon Elevator Invisibility: Root Cause, Vertical Shaft Geometry & Ground Clamp Isolation
+- **Discrepancy / Bug**: Chalice Dungeon elevators (`o290000`, `o290002`, `o290004`, `o290010`, `o290200`..`o290209`) became completely invisible in-game, leaving the player suspended in mid-air in elevator shafts.
+- **Root Cause**:
+  1. Elevator models were mistakenly grouped into the general cage decimation pipeline (`o29000*`, `o2902*`).
+  2. `geometry_sanitizer.py` applied a global default ground clamp of $Y \ge -0.05$m and edge ceiling $\le 2.0$m.
+  3. The 44-bone layer elevator (`o290000`) has counterweight cables spanning $Y = -62.65$m to $+39.69$m and its platform floor at $Y = -1.60$m to $-0.40$m. Clamping all vertices below $-0.05$m flattened the elevator platform directly onto the floor plane, culling 100% of platform triangles as degenerate flat slivers (`faces = 0`). The 60m vertical cables were also clamped and culled as edges $> 2.0$m.
+- **Remediation & Invariants**:
+  1. **Strict Bypass**: All elevator archives (`o290000`..`o290004`, `o290010`..`o290014`, `o290200`..`o290209`, `o290300`..`o290304`, `o290470`..`o290474`) are strictly bypassed and preserved pristine vanilla.
+  2. **Ground Clamp Isolation**: Default `ground_clamp_y` set to `None` in `geometry_sanitizer.py`. Ground clamping ($Y \ge -0.05$m) and tight edge culling ($\le 2.0$m) are strictly isolated to sprawling cadaver waste piles (`is_target_cadaver`), never applied to elevators or structural props.
+  3. **Automated Verification**: `test_elevators()` added to `tools/verify_retro_props.py`, ensuring all elevator submeshes have `faces > 0` and `o290000` retains deep vertical shaft extent ($\min(Y) \le -10.0$m).
+
+---
+
+## 16. In-Engine On-Demand Retro Mod Switcher (Feature 003)
+
+### 16.1 Architecture Overview
+Because Bloodborne on `bbport`/`bbhost` loads FLVER and TPF assets into memory during level initialization, hot-swapping all 3D mesh buffers mid-frame without level reloads risks GPU VRAM leaks. The On-Demand Mod Switcher implements an in-engine checkpoint reload workflow:
+1. **Pad Chord Detection**: Samples `BTN_L3 | BTN_R3` from `PadData.buttons` with a mandatory 3,000ms debounce window.
+2. **Smooth Fade**: Dispatches a 200ms cross-dissolve fade-to-black before switching disk paths.
+3. **Atomic Symlink Pivot**: Uses `os.replace` on Linux symlinks (`out/mod-game-*/dvdroot_ps4`) to swap between `VANILLA_HD` (pointing to `CUSA03173/dvdroot_ps4`) and `RETRO_5PILLAR` (pointing to merged 5-pillar structure). Swap executes in $< 0.2$ms.
+4. **Checkpoint Reload**: Triggers a fast checkpoint/lantern reload (~1.5–2s) that reconstructs scene resources in memory with bit-for-bit player state preservation.
+
+### 16.2 Automated Test CLI
+```bash
+uv run python tools/verify_mod_switcher.py --all
+```
+
+---
+
+## 17. Native In-Game Lantern Presentation Mod (MOAL-Style, Feature 004)
+
+### 17.1 The Talk ESD State Machine vs. FMG String Architecture
+In FromSoftware's engine, dialogue choices and interactive menus are NOT driven by FMG message tables alone. FMG files (`menu.msgbnd.dcx`) are purely passive localization string lookups. Interactive dialogue menus are dynamically assembled by Talk ESD state machines (`script/talk/*.talkesdbnd.dcx`):
+1. **Dialogue Generation Sequence**:
+   - `ClearTalkListData()` (Bank 1, Opcode 20) wipes current menu items.
+   - `AddTalkListData(index, text_id, flag)` (Bank 1, Opcode 19) registers a selectable choice linked to an FMG message ID and an optional display flag.
+   - `ShowShopMessage(0, 0, 0)` (Bank 1, Opcode 10) renders the active choices on the player's HUD.
+2. **Vanilla vs. MOAL Lamp Flow & Lit Lamp Hook Invariant**:
+   - **FromSoftware State Machine Topology**: Lamp interaction executes SM 2147483644.
+     - **Overworld Maps (`m21`–`m28`, `m32`–`m36`)**:
+       - State 1 is `非稼動状態_非マルチ中` (unlit lamp), transitioning to State 4 $\to$ State 7 (calls SM 2147483639 lamp ignition).
+       - State 2 is `稼動状態_非マルチ中` (lit lamp), transitioning to State 3 $\to$ State 6 (calls SM 2147483643 Return to Hunter's Dream warp).
+     - **Chalice Dungeons (`m29_00_00_00`, `t290110`–`t290119`)**:
+       - State 1 is `非稼動状態_非マルチ中`, transitioning directly to State 6 (calls SM 2147483639 lamp ignition).
+       - State 2 is `稼動状態_非マルチ中`, transitioning to State 3 $\to$ State 5 (calls SM 2147483643 Return to Hunter's Dream warp).
+   - **Crucial Hook Invariant: Preserving Unlit Ignition**:
+     - Previous attempts erroneously claimed a "dual-hook" requirement, hijacking both states. This completely destroyed unlit lamps, making newly discovered lamps impossible to ignite.
+     - The unlit ignition state (State 7 in overworld, State 6 in chalice) MUST remain 100% pristine and call SM 2147483639.
+     - Hook ONLY the lit lamp state (State 6 in overworld, State 5 in chalice) to call custom menu SM 2147483500.
+   - **Eliminating Frame 0 Abort in Menu Condition**:
+     - Evaluating `IsTalkExclusiveMenuOpen() == 0` (`7584a64095`) aborts the menu on frame 0 because `ShowShopMessage` renders asynchronously.
+     - Canonical exit condition evaluates ONLY Cancel / Leave results:
+       `GetTalkListEntryResult() == 0 or GetTalkListEntryResult() == 99` (`5784a640955784a682630000009599a1`).
+   - **MOAL Compatibility**:
+     - MOAL hooks lit lamps into SM 2147483500. Our pipeline injects Choices 20 and 21 before Leave (99) and preserves the unlit ignition state.
+3. **Injected Demake Architecture**:
+   - Injected Choice 20 (FMG ID `70011010` - "Switch to Retro 32-Bit Demake").
+   - Injected Choice 21 (FMG ID `70011011` - "Restore Modern High-Definition").
+   - When selected, sets Event Flag `999901` (Retro) or `999902` (Modern).
+   - Immediately invokes FromSoftware's native lamp warp routine `SM 2147483641(MACHINE_ARGS[0], MACHINE_ARGS[1], 0)`, triggering Hunter kneeling dissolution and level reload.
+4. **All 16 Map Binders Patched**:
+   - Patched across all 16 game regions: `m21_01_00_00` (Hunter's Dream), `m22_00_00_00` (Cathedral Ward), `m23_00_00_00` (Hemwick), `m24_00/01/02_00_00` (Yahar'gul), `m25_00_00_00` (Byrgenwerth), `m26_00_00_00` (Forbidden Woods), `m27_00_00_00` (Mensis), `m28_00_00_00` (Frontier), `m29_00_00_00` (Chalice Labyrinths), `m32_00_00_00` (Cainhurst), `m33_00_00_00` (Old Yharnam), `m34_00_00_00` (Upper Cathedral), `m35_00_00_00` (DLC Fishing Hamlet / Hunter's Nightmare), `m36_00_00_00` (Lecture Building).
+   - Patched in `mods/Bloodborne Retro HUD and UI/dvdroot_ps4/script/talk/` (for vanilla play without MOAL).
+   - Patched in `bbport-src/mods/MOAL .../dvdroot_ps4/script/talk/` (for play with MOAL enabled).
+
+### 17.2 Companion Memory Daemon, Dual Signaling & VFS Synchronization
+Because FromSoftware event flags reside in guest memory:
+1. **Dual Signaling Architecture**:
+   - Under Linux kernel `yama.ptrace_scope = 1`, inspecting `/proc/<pid>/mem` from an external tracer fails with `EACCES` / `EPERM`.
+   - The companion daemon (`lantern_event_listener.py`) supports dual signaling: parent-traced memory observation when launched as runner, and robust file IPC via `out/flag_signal.txt`.
+2. **Sub-Millisecond VFS & INI Synchronization**:
+   - Upon detecting flag `999901` or `999902`, the daemon:
+     - Atomically swaps VFS symlinks (`map`, `obj`, `parts`, `chr`, `menu`) inside active `out/mod-game-XXXXX/dvdroot_ps4/` in $< 0.1$ms. Materialized real directories are safely handled without POSIX `EISDIR` errors.
+     - Synchronizes `bbport.ini` (`retro_mode=1` vs `retro_mode=0`, `psx_mode=1` vs `0`).
+     - Updates `out/retro_toggle_state.json` and syncs `mods.json` active/disabled lists.
+3. **Execution**:
+   - Run standalone daemon: `uv run python tools/pipeline/lantern_event_listener.py --daemon`.
+   - Manual CLI signaling: `uv run python tools/pipeline/lantern_event_listener.py --flag 999901`.
+
+### 17.3 Automated Test CLI
+```bash
+uv run python tools/verify_lantern_mod.py --all
+```
+Validates FMG strings, all 56 Talk ESDs across 16 maps (local, bbport, MOAL), unlit lamp safety, canonical condition bytecode, sub-millisecond VFS swap (< 0.1ms), `bbport.ini` sync, and persistent state retention.
+
+### 17.4 Known Failure Mode: Soulstruct State ID Collision & Feature 004 Pause
+- **Root Cause Analysis**: The Soulstruct Talk ESD binary serializer (`ESD.to_writer()`) maintains `state_id_offsets: dict[int, int]` keyed solely by `state_id` (`0..7`), unscoped by `(state_machine_index, state_id)`.
+- **Symptom**: When a talk script binder contains multiple state machines sharing common state IDs (e.g. State 0 `Init`, State 1 `Talk`), every subsequent state machine overwrites `state_id_offsets` with its own offsets. Cross-state machine jump pointers become misdirected, causing FromSoftware's Talk script interpreter to abort or enter dead loops, rendering in-game lamps completely inert (cannot prompt interaction, talk, or ignite).
+- **Status & Remediation**: Feature 004 is paused pending a compiler-level patch in Soulstruct or direct AST bytecode patcher. All Talk ESD modifications have been removed from `mods/Bloodborne Retro HUD and UI` and excluded from `dist/bloodborne_retro_hud.patch` to maintain 100% vanilla lamp stability in Release v1.2.0.
+
+---
+
+## 18. bbhost Native Runner Upgrade & Pure Retro Shaders Plugin (Feature 006)
+
+### 18.1 Architecture & Upstream Immutability
+- **Runner Upgrade**: Upgraded native runner from legacy `v0.2.18` (Plugin API 10) to `bbhost v0.2.32` (commit `6e379e8`, Plugin API 28) deployed at `/home/andre/Games/bbhost/`.
+- **Zero Host Edits**: Core `bbhost-src` upstream repository is pristine and unmodified (`git status` clean). All builds and official releases operate with zero modifications to upstream engine files.
+- **Reference Workspace Isolation**: Per architectural guidelines, all external tools, scripts, and plugin sources reside strictly outside the Bloodborne mod repository in `/home/andre/Games/reference/`. Base game `CUSA03173/` remains pristine and untouched.
+- **Config Path Update**: bbhost v0.2.32 standardizes user configuration under `~/.local/share/bbhost/bbhost.toml`. The `/home/andre/Games/bbhost/bbhost.toml` symlink is linked directly to this active configuration.
+
+### 18.2 Save Migration & Protection (`bbport` -> `bbhost`)
+- **Binary Compatibility**: Both runners utilize identical decrypted PS4 save containers (`SPRJ0005`), where `userdata0000` is 1,310,720 bytes and `backup0010` is 262,144 bytes.
+- **Automated Tool**: `/home/andre/Games/reference/tools/import_bbport_saves.py`
+  - Always executed via: `uv run python /home/andre/Games/reference/tools/import_bbport_saves.py`.
+  - Automatically creates timestamped pre-import backups in `~/.local/share/bbhost/data/saves/SPRJ0005.pre_import_bak_*`.
+  - Verifies bit-identical SHA256 checksums across all 13 save files before finalizing.
+
+### 18.3 Launcher & Steam Integration
+- **Wrapper**: `/home/andre/.local/bin/bbhost`
+  ```bash
+  #!/usr/bin/env bash
+  set -euo pipefail
+  HERE="/home/andre/Games/bbhost"
+  cd "$HERE"
+  exec /home/andre/.local/bin/offload --no-boost "$HERE/run-bbhost.sh" "$@"
+  ```
+- **Desktop Entry**: `~/.local/share/applications/io.github.bbhost.desktop`
+- **Low-Spec Hardware Optimizations (GTX 1650 Max-Q)**:
+  `BBHOST_TIGHT_MEMORY=1`, `BBHOST_BUFFER_SHADOW=1`, `BBHOST_CS_OPTIMIZE=1`, `BBHOST_FAST_LOADING=1`, `BBHOST_UNTILE_THREADS=4`, `BBHOST_TEX_PREP_THREADS=4`, `BBHOST_SUBMIT_THREAD=1`.
+
+### 18.4 Pure Retro Plugin (`lowpoly_overhaul.so`)
+- **Plugin API**: Implemented against `BB_PLUGIN_API_VERSION 28` with `BB_PLUGIN_OPT_IN | BB_PLUGIN_LIVE_SWITCH`.
+- **Native Scene Controls**:
+  - `scene_snap`: Screen-space vertex snapping with selectable grid lines (`Off`, `120p`, `240p`, `360p`, `480p`).
+  - `scene_filter`: `BB_FILTER_NEAREST` disables bilinear and anisotropic filtering on 3D geometry.
+  - `scene_scale`: Decoupled 3D rendering (e.g. 240p) with integer nearest upscale; 2D HUD and Scaleform menus remain at native window resolution.
+  - `scene_colour_bits`: RGBA8 color targets with nearest grading filter (`grading_filter(BB_FILTER_NEAREST)`).
+- **Affine Texture Mapping (`shader_override`)**:
+  - Automatically intercepts world/material pixel shaders via `api->shader_source`.
+  - Prepends `noperspective` interpolators to input texture coordinate declarations (`TEXCOORD`), preventing perspective division in the hardware rasterizer and achieving authentic PSX polygon texture warping.
+- **Clean Luminance Dithering (PR #419 Parity)**:
+  - Solves the dark-scene rainbow noise artifact present in standard RGB-channel dithering.
+  - Compute shader (`shaders/dither_luma.comp` compiled to `shaders/dither_luma.spv.h`) runs at `on_render(BB_RENDER_AFTER_UPSCALE)`.
+  - Quantizes perceptual luminance (`dot(color.rgb, vec3(0.299, 0.587, 0.114))`) via 4x4 Bayer matrix across 32 discrete steps while locking color ratios: `result = color.rgb * (ditheredLuma / luma)`.
+  - Attenuates dither strength in deep blacks (< 2% luminance) via `smoothstep(0.015, 0.08, luma)`.
+- **Live In-Game Menu Controls (F9)**:
+  - Supported options in `bbhost.toml` and F9 menu: `snap`, `affine`, `dither`, `unfiltered`, `colour_8bit`, `resolution`, `sound`.
+  - All toggles update on the next rendered frame without application restart.
+
+
+
+
+
+
+

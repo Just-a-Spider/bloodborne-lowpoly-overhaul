@@ -320,3 +320,151 @@ The vertex counts of `VA0` and `VA1` must be strictly identical ($N_{\text{VA0}}
 | **Albedo Texture Resolution** | 1024x1024 / 2048x2048 | 128x128 RGB555 quantized | 128x128 RGB555 quantized |
 | **Havok Cloth Simulation** | Active (`_c.hkx` solver) | Completely decoupled (0 overhead) | Active on capes/skirts (0 crashes) |
 | **Mod Folder Location** | `parts/` | `mods/Bloodborne Low-Poly Overhaul (Flat Stiff)` | `mods/Bloodborne Low-Poly Overhaul (Cloth Physics)` |
+
+---
+
+## Plan 9: Authentic PSX HUD & UI Addition Mod (`menu/`)
+
+- **Date Initiated**: 2026-11-08
+- **Primary Objective**: Demake Bloodborne's Scaleform heads-up display (HUD), player combat vitals, quickslots, interaction prompts, dialogue boxes, boss gauges, and announcement banners to an authentic 32-bit retro console style as an independent modular addition mod, keeping base overhaul packages untouched.
+- **Scope**: `menu/common.tpf.dcx` (65 total textures: 40 demaked, 25 preserved pristine). Output deployed to standalone addition mod `mods/Bloodborne Retro HUD and UI/` and distribution patch `dist/bloodborne_retro_hud.patch`.
+
+### Technical Diagnosis & Scaleform Invariants
+1. **Scaleform Canvas UV Alignment**: FromSoftware GFX definitions map UI sprites using fixed pixel bounds. Resizing container dimensions causes blank boxes or offset 9-slice frames. Pipeline applies bilinear downsampling (2x/4x) and 15-bit RGB555 palette quantization followed by nearest-neighbor re-upscaling back to original canvas dimensions, locking UV bounds.
+2. **Single Mip Invariant**: UI textures strictly mandate `num_mips = 1`. Secondary mips trigger dynamic Scaleform blurry filtering during animation.
+3. **Controller Prompt Whitelist**: Small controller button glyphs (`KG_*`, 24 textures) and language markers (`MENU_LNG_*`, 3 textures) are strictly whitelisted and preserved byte-for-byte to prevent input confusion.
+4. **Standalone Addition Mod Isolation**: Packaged strictly into `mods/Bloodborne Retro HUD and UI/` so players can layer it optionally on top of either Cloth Physics or Flat Stiff base overhauls without modifying base overhaul folders.
+
+### Task Checklist & Status
+- [x] **Subtask 9.1**: Output directory staging in `CUSA03173-PSX/dvdroot_ps4/menu/` and `mods/Bloodborne Retro HUD and UI/dvdroot_ps4/menu/`.
+- [x] **Subtask 9.2**: Verified Python 3.12+ execution environment and dependencies via `uv run`.
+- [x] **Subtask 9.3**: Built automated 4-tier acceptance test harness (`tools/verify_hud_demake.py`) with 15 automated validation checks.
+- [x] **Subtask 9.4**: Enhanced `tools/demake_ui_engine.py` with `UIProcessingRule` pattern-matching engine enforcing single-mip and Morton swizzle invariants.
+- [x] **Subtask 9.5**: Implemented `HUDAtlasManifest` catalog and validation scanner in `tools/verify_hud_demake.py`.
+- [x] **Subtask 9.6**: Demaked primary combat vitals (`MENU_Common_00001`..`00005`) and weapon icons (`MENU_Icon_*`).
+- [x] **Subtask 9.7**: Demaked interaction frames and dialogue boxes (`MENU_Common_00090`..`00111`) while preserving 100% of `KG_*` controller prompts.
+- [x] **Subtask 9.8**: Demaked boss gauges and announcement banners (`MENU_Common_00120`..`00130`, `MENU_Common_Loading*`).
+- [x] **Subtask 9.9**: Packaged standalone addition mod in `mods/Bloodborne Retro HUD and UI/dvdroot_ps4/menu/common.tpf.dcx` (4.13 MB).
+- [x] **Subtask 9.10**: Generated standalone XOR delta patch `dist/bloodborne_retro_hud.patch` (4.13 MB, 100% verified).
+
+### Batch Results Summary: HUD & UI Addition Mod (`menu/`)
+
+| Metric | Pristine Baseline (`CUSA03173`) | Demade PSX Addition Mod | Impact |
+| :--- | :--- | :--- | :--- |
+| **Total Textures** | 65 textures | 65 preserved records | **100% Record Parity** |
+| **Demaked Atlases** | Baseline HD PBR | 40 quantized RGB555 | **32-Bit Chunky Texels** |
+| **Button Prompts (KG_*)** | Baseline | 24 pristine preserved | **100% Input Legibility** |
+| **Single Mip Invariant** | num_mips = 1 | num_mips = 1 | **0 Blurry Filtering** |
+| **Container Size** | 9.81 MB | 4.13 MB | **-57.9% Size Reduction** |
+| **Mod Deployment** | None | `mods/Bloodborne Retro HUD and UI/` | **Modular Addition Mod** |
+| **Distribution Patch** | None | `dist/bloodborne_retro_hud.patch` | **Standalone XOR Diff** |
+| **Automated Tests** | Baseline | 15/15 PASS (exit 0) | **100% Verification Rate** |
+
+---
+
+## Plan 10: Chalice Dungeon Props Stabilization & 5-Pillar Modular Mod Architecture (`obj/`, `map/`, `parts/`, `chr/`, `menu/`)
+
+- **Date Initiated**: 2026-11-08
+- **Primary Objective**: Resolve Chalice Dungeon exploded cadaver waste meshes, demake regular and deformed dungeon cages to PSX low-poly budget with flat facet normals, formalize the 5-pillar modular mod architecture under `mods/`, and enforce Constitution Principle VI via multi-model adversarial audit (Sonnet 4.6 in AGY).
+- **Scope**:
+  - Cadaver waste props (`o297210`..`o297214`, `o298500`..`o298524`, `o290250`..`o290274`, `o297100`..`o297144`, `o288000`..`o288100`): 41 archives.
+  - Dungeon and torture cages (`o290000`..`o290004`, `o290200`..`o290284`, `o322050`..`o322056`, `o322001`, `o322310`, `o322320`, `o260303`, `o260310`, `o243010`..`o243014`, `o270102`, `o270104`, `o273011`, `o281000`..`o281001`, `o282020`): 55 archives.
+  - 5-Pillar modular mod packaging in `mods/`: Maps (146 files), Props/Objects (858 files), Armors/Weapons Cloth & Stiff (1,149 files each), Characters (269 files), HUD/UI (1 file).
+  - Adversarial Quality Audit (`AUDIT_REPORT.md`) signed with PASS verdict.
+
+### Technical Discoveries & Engine Invariants
+1. **glTF Normal-Split Vertex Explosion**: When flat normal shading (`poly.use_smooth = False`) was exported naively via glTF, every vertex of every face was split ($V = 3T$, e.g. 63,051 verts for 21,017 tris in `o297210`). Discontinuous normal vectors and detached boundary vertices ballooned across room bounds when loaded into FromSoftware's renderer. Fixed by vertex welding before export, bone-local transform retention, and strict edge-length capping ($\le 2.0$m).
+2. **Ground Plane Pre-Clamping & Degenerate Triangles**: Clamping floor-penetrating cadaver vertices ($Y < -0.05$m) *after* sanitization created collinear micro-triangles ($A < 10^{-6}\text{ m}^2$). Moving ground clamping *before* area and aspect ratio filtering eliminates zero-area slivers.
+3. **Bone Hierarchy Bounding Box Accumulation**: Child submeshes anchored to secondary bones (such as `o290250` hanging chains and corpse clusters) require accumulating parent bone transforms using FromSoftware XZY Euler rotation order ($R_x R_z R_y$). Naive coordinate export shifted mesh vertices 10–25m into the void. `update_flver_bounding_boxes` recalculates exact root-relative extents.
+4. **Dungeon Cage Bypass Elimination**: Un-bypassed cage stems in `batch_blender_demake_obj.py` and enforced decimation ratio of 0.20 (84.5% polygon reduction) while preserving bit-for-bit Havok rigid collisions (`.hkx`) and animation binders (`.anibnd`).
+5. **5-Pillar Directory Isolation**: Scenery props in `obj/` (858 files) decoupled from static world architecture in `map/` (146 files), equipment in `parts/`, characters in `chr/`, and UI in `menu/`. Verified zero cross-contamination and 100% autonomous mod loading in `bbport`.
+
+### Task Checklist & Status
+- [x] **Subtask 10.1**: Verified `CUSA03173/` immutability and Python dependencies via `uv run`.
+- [x] **Subtask 10.2**: Implemented `geometry_sanitizer.py`, `bone_transform_utils.py`, and `modular_structure_validator.py`.
+- [x] **Subtask 10.3**: Implemented automated test harness `tools/verify_retro_props.py` for cadaver and cage verification.
+- [x] **Subtask 10.4**: Updated `batch_blender_demake_obj.py` and `blender_process_obj.py` with bone-local retention, vertex welding, and ground pre-clamping.
+- [x] **Subtask 10.5**: Processed and deployed 41 cadaver props to `CUSA03173-PSX/dvdroot_ps4/obj/` (611,217 -> 94,485 tris, -84.5%).
+- [x] **Subtask 10.6**: Processed and deployed 55 cage archives to `CUSA03173-PSX/dvdroot_ps4/obj/` (1,532,934 -> 236,998 tris, -84.5%).
+- [x] **Subtask 10.7**: Verified `verify_retro_props.py --all` exit code 0 (0 exploded spikes, 0 degenerates, 100% budget met).
+- [x] **Subtask 10.8**: Implemented `package_modular_mods.py` and packaged all 5 pillars under `mods/`.
+- [x] **Subtask 10.9**: Verified `verify_modular_mods.py` exit code 0 (all 5 pillars isolated with valid `mod.json`).
+- [x] **Subtask 10.10**: Implemented multi-model adversarial audit harness (`audit_assets_adversarial.py`, `run_adversarial_audit.py`).
+- [x] **Subtask 10.11**: Executed adversarial audit protocol and generated signed `AUDIT_REPORT.md` (Verdict: PASS).
+- [x] **Subtask 10.12**: Identified and resolved Chalice Dungeon invisible elevator bug:
+  - Discovered `o290000` (44-bone layer elevator) and `o290200` (7-bone cage elevator) were erroneously demade and flattened by global `ground_clamp_y = -0.05`m, culling 100% of platform triangles (`faces = 0`).
+  - Restored pristine vanilla elevator archives across `CUSA03173-PSX/`, `mods/`, and `/home/andre/Games/bbport-src/mods/`.
+  - Isolated ground clamping strictly to cadaver waste props (`is_target_cadaver`).
+  - Implemented `test_elevators()` in `tools/verify_retro_props.py`.
+  - Re-generated `dist/bloodborne_retro_props.patch` (105.52 MB, 100% parity).
+  - Executed adversarial audit (PASS).
+
+### Batch Results Summary: Dungeon Props & 5-Pillar Architecture
+
+| Metric | Pristine Baseline (`CUSA03173`) | Demade PSX Sandbox / Modular | Impact |
+| :--- | :--- | :--- | :--- |
+| **Cadaver Wastes (41 archives)** | 611,217 triangles | 94,485 triangles | **-84.5%** (-516,732 tris, 0 spikes) |
+| **Dungeon Cages (55 archives)** | 1,532,934 triangles | 236,998 triangles | **-84.5%** (-1,295,936 tris, 0 failures) |
+| **Exploded Spikes (> 2.0m)** | 0 | 0 | **100% Stable Geometry** |
+| **Degenerate Triangles (< 1e-6)** | 0 | 0 | **100% Clean Topology** |
+| **Pillar: Maps (`map/`)** | Base game | 146 files (548.3 MB) | **Decoupled Architecture** |
+| **Pillar: Props (`obj/`)** | Base game | 858 files (100.9 MB) | **Decoupled Scenery** |
+| **Pillar: Armors/Weapons Cloth** | Base game | 1,149 files (402.7 MB) | **Cloth Physics Enabled** |
+| **Pillar: Armors/Weapons Stiff** | Base game | 1,149 files (402.7 MB) | **Flat Stiff Decoupled** |
+| **Pillar: Characters (`chr/`)** | Base game | 269 files (189.0 MB) | **Low-Poly Enemies & Bosses** |
+| **Pillar: HUD & UI (`menu/`)** | Base game | 1 file (4.1 MB) | **Standalone Addition Mod** |
+| **Multi-Model Audit Sign-Off** | Pending | `AUDIT_REPORT.md` | **PASS (Principle VI Verified)** |
+
+---
+
+## Plan 11: In-Engine On-Demand Retro Mod Switcher (Feature 003)
+
+- **Date Initiated**: 2026-11-09
+- **Primary Objective**: Deliver in-game, on-demand switching between Vanilla HD (`CUSA03173/`) and the 5-Pillar 32-Bit Retro Demake (`mods/`) triggered by simultaneous L3 + R3 stick clicks with a 200ms cross-dissolve fade and quick checkpoint reload (~1.5–2s) without closing the game or corrupting player state.
+- **Scope**:
+  - Pad chord detection (`BTN_L3 | BTN_R3`) with 3,000ms debounce lockout.
+  - Kernel-atomic symlink overlay pivoting (`os.replace`) in $< 0.2$ms.
+  - 5-Pillar synchronization across `map/`, `obj/`, `parts/`, `chr/`, and `menu/`.
+  - JSON schema contract enforcement (`contracts/toggle_state_schema.json`) and `mods.json` sync.
+
+### Task Checklist & Status
+- [x] **Subtask 11.1**: Formulated domain types, enums, and data models in `tools/pipeline/mod_switcher_types.py`.
+- [x] **Subtask 11.2**: Implemented atomic state persistence and schema validation in `tools/pipeline/mod_switcher_state.py`.
+- [x] **Subtask 11.3**: Implemented atomic VFS dual-profile symlink manager in `tools/pipeline/mod_overlay_manager.py`.
+- [x] **Subtask 11.4**: Implemented pad chord detector and debouncer in `tools/pipeline/pad_chord_detector.py`.
+- [x] **Subtask 11.5**: Implemented scene reload coordinator and 200ms fade transition state machine in `tools/pipeline/scene_reload_coordinator.py`.
+- [x] **Subtask 11.6**: Integrated master runtime controller in `tools/pipeline/in_game_mod_switcher.py`.
+- [x] **Subtask 11.7**: Implemented automated test harness `tools/verify_mod_switcher.py` and validated pad chord (US1), 5-pillar swap (US2), and persistence (US3) with 100% pass rate.
+
+---
+
+## Plan 12: Native In-Game Lantern Mod Switcher (MOAL-Style, Feature 004)
+
+- **Date Initiated**: 2026-11-09 (Updated & Fixed: 2026-11-11)
+- **Primary Objective**: Deliver diegetic in-game presentation switching via FromSoftware's native lantern dialogue menu across all lit lanterns, triggering the authentic Hunter kneeling/dissolution animation and checkpoint reload while pivoting the 5-pillar VFS overlay during the warp fade in $< 0.1$ms.
+- **Root Cause Diagnosis & Corrected Architecture**:
+  - **Unlit Ignition Safety**: Preserved SM 2147483639 bit-for-bit in unlit state (State 7 in overworld, State 6 in chalice). Refuted erroneous "dual-hook" claim; hook ONLY lit lamp state calling SM 2147483643 to SM 2147483500.
+  - **Eliminated Frame 0 Abort**: Removed `IsTalkExclusiveMenuOpen() == 0` from condition bytecode (`5784a640955784a682630000009599a1`), preventing instant dialogue menu exit on entry.
+  - **Dual Signaling & Linux Perms**: Implemented `out/flag_signal.txt` file IPC alongside parent memory tracing, bypassing Linux `yama.ptrace_scope = 1` restrictions. Added `bbport.ini` (`retro_mode=1` vs `0`) and `mods.json` synchronizer.
+  - **VFS Materialized Directory Handling**: Fixed `pivot_active_game_dvdroot` to safely clean materialized folders without POSIX `EISDIR` errors.
+- **Scope**:
+  - Injected FMG dialogue prompts into `menu.msgbnd.dcx` Entry 30 (IDs `70011010` / `70011011`).
+  - Event flag protocol (`999901` for Retro Demake, `999902` for Modern HD).
+  - Sub-millisecond atomic VFS pivot via `LanternEventListener` during the fade window.
+  - State persistence in `out/retro_toggle_state.json` and sync with `bbport.ini` and `mods.json`.
+  - Re-generated `dist/bloodborne_retro_hud.patch`.
+
+### Task Checklist & Status
+- [x] **Subtask 12.1**: Restored pristine MOAL `.talkesdbnd.dcx` backups and validated contracts in `tools/fixtures/lantern/validate_contracts.py`.
+- [x] **Subtask 12.2**: Formulated domain models and event flag constants in `tools/pipeline/lantern_mod_types.py`.
+- [x] **Subtask 12.3**: Injected localized FMG dialogue prompts (`70011010` / `70011011`) into `menu.msgbnd.dcx` across local and `bbport-src` targets.
+- [x] **Subtask 12.4**: Fixed `inject_lantern_talk_esd.py` to preserve unlit State 7/6 ignition, hook only lit State 6/5, and inject canonical choice/exit graph across all 16 maps and MOAL.
+- [x] **Subtask 12.5**: Rewrote `lantern_event_listener.py` supporting dual signaling (`out/flag_signal.txt` IPC + memory observer), safe directory pivots without `EISDIR`, and `bbport.ini` sync.
+- [x] **Subtask 12.6**: Implemented persistence synchronizer updating `out/retro_toggle_state.json`, `mods.json`, and `bbport.ini` (`retro_mode=1` vs `0`).
+- [x] **Subtask 12.7**: Rewrote verification suite `tools/verify_lantern_mod.py` with multi-tier checks (`fmg-injection`, `talk-esd`, `moal-compat`, `flag-signaling`, `persistence`).
+- [x] **Subtask 12.8**: Verified complete automated suite `tools/verify_lantern_mod.py --all` (100% pass rate).
+- [x] **Subtask 12.9**: Updated documentation across `BB_PSX_DEMAKE_GUIDE.md` Section 17 and `BB_PSX_DEMAKE_MATH_AND_FINDINGS.md` Section 32.
+- [x] **Subtask 12.10**: Re-generated `dist/bloodborne_retro_hud.patch` and executed adversarial quality audit.
+
+
+

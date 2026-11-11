@@ -1237,25 +1237,201 @@ Empirical telemetry conducted on target hardware (`NVIDIA GeForce GTX 1650 with 
    - *Root Cause*: High-poly retail meshes (50k–100k triangles per character/boss) cause catastrophic sub-pixel triangle rasterization and vertex shader invocation bottlenecks on low-spec GPUs.
    - *Decimation & Downscale Impact*: Low-poly geometry combined with $128\times 128$ / $256\times 256$ BC3/BC7 textures reduces bus transfer bandwidth and eliminates front-end primitive assembly stalls.
 
+---
 
+## 30. Dungeon Prop Geometry Stabilization, Bone Hierarchy Accumulation & Modular Mod Architecture
 
+### 30.1 Cadaver Mesh Normal Splitting & Discontinuous Vertex Explosion Math
+When converting high-polygon organic scenery (e.g. `o297210`, `o298500`) to flat facet normal shading (`poly.use_smooth = False`), naive export through the glTF exporter creates disconnected vertex duplicates at every face corner:
+$$V_{\text{split}} = 3 \cdot T$$
+For `o297210` ($T = 21,017$), this yielded $V = 63,051$ unshared vertices. When loaded into FromSoftware's hardware skinning pipeline without unified topology, discontinuous face normals cause vertices along UV and material boundaries to tear apart under viewport projection, projecting exploded planar sheets into the room volume.
 
+**Resolution Formulation**:
+Prior to export, execute $k$-d tree vertex welding within threshold $\epsilon = 1.0\times 10^{-4}\text{ m}$:
+$$\forall \mathbf{v}_i, \mathbf{v}_j \in V, \quad \|\mathbf{v}_i - \mathbf{v}_j\| < \epsilon \implies \mathbf{v}_j \gets \mathbf{v}_i$$
+Following decimation, enforce an edge length ceiling:
+$$e_{\max} = \max_{e \in E} \| \mathbf{v}_{e,1} - \mathbf{v}_{e,0} \| \le 2.0\text{ m}$$
 
+### 30.2 FromSoftware Bone Transform Accumulation & Model-Space AABB
+Props featuring child bones (such as `o290250` hanging cadavers and chains) anchor submeshes to non-root nodes with relative translations $\mathbf{t}_i$ and Euler rotations $\mathbf{r}_i$.
 
+**Rotation Order Invariant**:
+FromSoftware stores bone rotations as radians in **XZY Euler order**:
+$$\mathbf{R}_i = \mathbf{R}_y(\theta_y) \cdot \mathbf{R}_z(\theta_z) \cdot \mathbf{R}_x(\theta_x)$$
+The affine transformation matrix from local bone space to global model space is accumulated recursively through bone parent indices $p = \text{parent}(i)$:
+$$\mathbf{M}_i = \mathbf{M}_p \cdot \begin{bmatrix} \mathbf{R}_i & \mathbf{t}_i \\ \mathbf{0}^T & 1 \end{bmatrix}, \quad \mathbf{M}_{\text{root}} = \mathbf{I}$$
+Transforming bone-local vertices $\mathbf{v}^{(i)}$ to root model-space $\mathbf{v}_{\text{model}}$:
+$$\begin{bmatrix} \mathbf{v}_{\text{model}} \\ 1 \end{bmatrix} = \mathbf{M}_i \begin{bmatrix} \mathbf{v}^{(i)} \\ 1 \end{bmatrix}$$
+The FLVER model-space Axis-Aligned Bounding Box (AABB) is computed across all transformed vertices:
+$$\mathbf{B}_{\min} = \min_{v \in V_{\text{model}}} \mathbf{v}, \quad \mathbf{B}_{\max} = \max_{v \in V_{\text{model}}} \mathbf{v}$$
+Preserving bone-local coordinates while computing model-space AABBs eliminates the 10–25m spatial drift bug observed when exporting unparented world-space vertices.
 
+### 30.3 Triangle Area, Sliver Aspect Ratio & Ground Pre-Clamping
+Degenerate triangles with near-zero area trigger division-by-zero errors in raycasting and surface normal calculation. The triangle area is given by:
+$$\mathcal{A} = \frac{1}{2} \| (\mathbf{v}_1 - \mathbf{v}_0) \times (\mathbf{v}_2 - \mathbf{v}_0) \| \ge 1.0\times 10^{-6}\text{ m}^2$$
+The sliver aspect ratio is bounded by circumradius to inradius ratio:
+$$\rho = \frac{a \cdot b \cdot c}{8(s-a)(s-b)(s-c)} \le 25.0, \quad s = \frac{a+b+c}{2}$$
+**The Ground Clamping Sequence**:
+Clamping vertices that penetrate the dungeon floor ($y < -0.05\text{m} \to y = -0.05\text{m}$) *after* area filtering flattens vertical triangles into the floor plane, creating collinear micro-triangles. Performing ground plane clamping *before* degenerate area checks guarantees that collapsed floor slivers are detected and culled immediately.
 
+### 30.4 Five-Pillar Modular Mod Architecture & File Separation
+To prevent collision adjustments from destabilizing static world rendering, Bloodborne PSX assets are divided into five orthogonal domains under `mods/`:
+1. $\mathcal{P}_{\text{map}}$: Static world geometry (`dvdroot_ps4/map/`) - 146 BXF texture binders.
+2. $\mathcal{P}_{\text{obj}}$: Interactive scenery & breakables (`dvdroot_ps4/obj/`) - 858 files with rigid `.hkx` collision.
+3. $\mathcal{P}_{\text{parts}}$: Player armor and weapons (`dvdroot_ps4/parts/`) - 1,149 files (Cloth & Flat Stiff).
+4. $\mathcal{P}_{\text{chr}}$: Enemies, NPCs, and bosses (`dvdroot_ps4/chr/`) - 269 files.
+5. $\mathcal{P}_{\text{menu}}$: Standalone Scaleform HUD & UI (`dvdroot_ps4/menu/`) - 1 file (`common.tpf.dcx`).
 
+Directory isolation invariant:
+$$\mathcal{P}_i \cap \mathcal{P}_j = \emptyset \quad \forall i \ne j$$
 
+### 30.5 Chalice Dungeon Elevator Platform Geometry & Ground Clamp Failure Mode
+Chalice dungeon layer elevators (`o290000`, 44 bones; `o290200`, 7 bones) feature extensive vertical geometry:
+- Mesh 1 (counterweight shaft cables): $Y \in [-62.65\text{ m}, +39.69\text{ m}]$
+- Mesh 2 (elevator floor platform): $Y \in [-1.60\text{ m}, -0.40\text{ m}]$
 
+**The Clamping Degeneracy Proof**:
+Let a triangular face on the elevator floor have vertices $\mathbf{v}_0, \mathbf{v}_1, \mathbf{v}_2$ with elevations $y_i \in [-1.60, -0.40]$.
+Under unconditional ground clamping with floor threshold $y_{\text{clamp}} = -0.05\text{ m}$:
+$$y_i' = \max(y_i, y_{\text{clamp}}) = -0.05\text{ m} \quad \forall i \in \{0, 1, 2\}$$
+Since all three vertices are projected to the identical horizontal plane $y = -0.05$, the surface normal vector becomes purely vertical $\mathbf{n} = [0, 1, 0]^T$. However, when adjacent vertical riser edges and step facets are clamped:
+$$\mathbf{v}_j - \mathbf{v}_k \to [x_j - x_k, 0, z_j - z_k]$$
+Vertical faces collapse to collinear line segments where:
+$$\mathcal{A} = \frac{1}{2} \| (\mathbf{v}_1' - \mathbf{v}_0') \times (\mathbf{v}_2' - \mathbf{v}_0') \| = 0.0\text{ m}^2 < 10^{-6}\text{ m}^2$$
+Area-based sliver removal filters every collapsed triangle, resulting in $|\mathcal{F}_{\text{platform}}| = 0$ (100% triangle culling). The elevator becomes completely invisible to the GPU rasterizer while player collision remains hovering in mid-air.
 
+**Architectural Invariant**:
+Ground plane clamping must be gated strictly by asset semantic classification:
+$$\text{clamp}_y(v) = \begin{cases} \max(y, -0.05\text{ m}) & \text{if } \text{asset} \in \mathcal{A}_{\text{cadaver}} \\ y & \text{otherwise} \end{cases}$$
+Structural, mechanical, and elevator props with negative vertical bounding boxes ($\min(Y) < -1.0\text{m}$) must NEVER undergo ground plane clamping.
 
+---
 
+## 31. Dynamic VFS Overlay Atomicity & Checkpoint Reload Timing Models
 
+### 31.1 Linux Symlink Atomic Replacement via `os.replace`
+Let $L$ denote the active overlay symlink path `out/mod-game-*/dvdroot_ps4`, and $T_{\text{vanilla}}$, $T_{\text{retro}}$ be target profile roots.
+To guarantee that FromSoftware's guest file loader never encounters a partially written, unlinked, or corrupted path, replacement is executed via atomic inode replacement:
+1. Create temporary symlink $L_{\text{tmp}} \to T_{\text{target}}$.
+2. Execute POSIX `rename(2)` / `renameat2(2)` via `os.replace(L_tmp, L)`.
 
+**Atomicity Guarantee**:
+Under POSIX standards, `rename()` is strictly atomic with respect to filesystem lookups:
+$$\forall t, \quad \text{lookup}(L) \in \{T_{\text{vanilla}}, T_{\text{retro}}\}$$
+There is zero instant $t$ where $L$ is absent, broken, or half-updated. Measured swap duration:
+$$\tau_{\text{swap}} < 0.20\text{ ms} \ll \tau_{\text{fade}} = 200.0\text{ ms}$$
 
+### 31.2 Pad Chord Debounce Lockout Model
+Controller inputs are sampled at frequency $f_{\text{pad}} \approx 250\text{ Hz}$ ($\Delta t = 4\text{ ms}$).
+Let $B(t) \in \mathbb{N}$ be the button bitmask at time $t$. The chord activation function is:
+$$\chi(t) = \left( (B(t) \ \& \ (BTN\_L3 \mid BTN\_R3)) == (BTN\_L3 \mid BTN\_R3) \right)$$
+The debounced toggle trigger $\mathcal{T}(t)$ satisfies:
+$$\mathcal{T}(t) = \chi(t) \land \neg \chi(t - \Delta t) \land (t - t_{\text{last}} \ge \Delta t_{\text{debounce}})$$
+where $\Delta t_{\text{debounce}} = 3,000\text{ ms}$. This prevents accidental double-triggers and ensures that simultaneous stick presses during dodge or lock-on maneuvers do not thrash engine reloading.
 
+---
 
+## 32. Native Lantern TalkScript Menu Structure & Event Flag Protocol
 
+### 32.1 FMG Message Entry Layout
+Menu strings are stored in `menu.msgbnd.dcx` using 64-bit wide-character string tables (`FMG`).
+Entry 30 (`イベントテキスト.fmg`) holds prompt strings indexed by discrete integer IDs:
+- $S(70011000) = \text{"Light Lamp"}$
+- $S(70011001) = \text{"Return to the Hunter's Dream"}$
+- $S(70011010) = \text{"Switch to Retro 32-Bit Demake"}$
+- $S(70011011) = \text{"Restore Modern High-Definition"}$
 
+### 32.2 Event Flag State Machine
+Let $\mathcal{F}_{\text{event}} \in \{0, 1\}^N$ represent FromSoftware's persistent event flag bitfield.
+The mod signaling protocol maps reserved IDs $k \in \{999901, 999902\}$:
+$$k = \begin{cases} 999901 & \implies \text{Mode} \gets \text{RETRO\_5PILLAR} \\ 999902 & \implies \text{Mode} \gets \text{VANILLA\_HD} \end{cases}$$
+The transition function $\phi(k)$ updates the VFS overlay during the warp dissolve window:
+$$\phi(k): \quad \text{swap}(\text{overlay}, \text{Mode}(k)) \implies \tau_{\text{swap}} \approx 0.075\text{ ms}$$
+Because $\tau_{\text{swap}} \ll \tau_{\text{fade}} \approx 1,500\text{ ms}$, the guest file loader is guaranteed to read exclusively the updated asset tree on awakening.
 
+### 32.3 Talk ESD Bytecode & State Machine Transition Graph
+In FromSoftware's TalkScript engine, interactive dialogue lists are not rendered by static strings but dynamically constructed by the Talk ESD state machine:
+```text
+State 0 (Entry):
+  Command Bank 1, Idx 20: ClearTalkListData()
+  Command Bank 1, Idx 19: AddTalkListData(1, 70011001, -1)     [Return to Dream]
+  Command Bank 1, Idx 19: AddTalkListData(20, 70011010, -1)    [Retro Demake Choice]
+  Command Bank 1, Idx 19: AddTalkListData(21, 70011011, -1)    [Modern HD Choice]
+  Command Bank 1, Idx 19: AddTalkListData(99, 15000005, -1)    [Leave]
+  Command Bank 1, Idx 10: ShowShopMessage(0, 0, 0)
 
+Condition: GetTalkListEntryResult() == 20
+  Action: SetEventFlag(999901, 1)
+  Transition: State 20 -> Call SM 2147483641(MACHINE_ARGS[0], MACHINE_ARGS[1], 0)
+
+Condition: GetTalkListEntryResult() == 21
+  Action: SetEventFlag(999902, 1)
+  Transition: State 21 -> Call SM 2147483641(MACHINE_ARGS[0], MACHINE_ARGS[1], 0)
+
+Condition: GetTalkListEntryResult() == 0 or GetTalkListEntryResult() == 99
+  Transition: State 19 -> Exit State Machine (-1)
+```
+SM `2147483641` sets flag:
+$$\text{Flag}_{\text{warp}} = \text{MACHINE\_ARGS}[0] \times 10000 + 70000100 + \text{MACHINE\_ARGS}[1]$$
+triggering the engine's native lamp warp routine (Hunter dissolution, map unmount, camera fade, and destination reload).
+
+### 32.4 `SprjEventFlagMan` Binary Disassembly & Red-Black Tree Layout
+Reverse-engineered from Bloodborne `eboot.elf` (symbol address `0x01399BF0` and `bbnet20/bbsc/core/bloodborne_re.cpp`):
+- Singleton pointer location: `*(uint64_t*)(image_base + 0x0553B100)`
+- Struct offset `+0x1C`: Block divisor $D = \text{*(uint32\_t*)}(P_{\text{man}} + 0x1C)$ (typically $1000$ or $10000$)
+- Struct offset `+0x38`: Red-black tree root node pointer $R$
+- Red-black tree node binary layout:
+  - `+0x00`: Left child node pointer
+  - `+0x08`: Parent node pointer
+  - `+0x10`: Right child node pointer
+  - `+0x18`: Node color ($0 = \text{black}, 1 = \text{red}$)
+  - `+0x19`: `is_nil` boolean flag
+  - `+0x20`: Block ID key $K$ (uint32)
+  - `+0x28`: Pointer to raw bitfield byte buffer
+
+### 32.5 Bitfield Addressing Mathematics
+For any arbitrary event flag ID $F$:
+1. **Target Block Key**:
+   $$K(F) = \left\lfloor \frac{F}{D} \right\rfloor \times D$$
+2. **Byte Offset within Block**:
+   $$\text{Offset}_{\text{byte}}(F) = \left\lfloor \frac{F \pmod D}{8} \right\rfloor$$
+3. **Bit Mask**:
+   $$\text{BitIndex}(F) = 7 - (F \pmod 8)$$
+   $$\text{Mask}(F) = 1 \ll \text{BitIndex}(F)$$
+4. **Flag State Evaluation**:
+   $$\text{IsSet}(F) = (\text{Buffer}[\text{Offset}_{\text{byte}}(F)] \ \& \ \text{Mask}(F)) \neq 0$$
+5. **Atomic Memory Clearing**:
+   $$\text{Buffer}[\text{Offset}_{\text{byte}}(F)] \gets \text{Buffer}[\text{Offset}_{\text{byte}}(F)] \ \& \ \sim\text{Mask}(F)$$
+This guarantees $O(\log N_{\text{blocks}})$ search overhead and $O(1)$ bitfield sampling directly from host process memory without injecting code into guest execution threads. Note: Under Linux kernel `yama.ptrace_scope = 1`, access to `/proc/<pid>/mem` from an external tracer requires `PTRACE_ATTACH` or file IPC fallback (`out/flag_signal.txt`).
+
+### 32.6 Talk ESD State Machine Topology & Unlit Safety Proof
+In `eboot.elf`, lamp interaction is initiated by SM `2147483646` (routing to SM `2147483644` in non-multiplayer mode):
+
+1. **Overworld Map Topology (`m21`–`m28`, `m32`–`m36`)**:
+   - State 1: `非稼動状態_非マルチ中` (Unlit lamp) $\to$ State 4 $\to$ State 7: calls SM `2147483639` (Lamp Ignition).
+   - State 2: `稼動状態_非マルチ中` (Lit lamp) $\to$ State 3 $\to$ State 6: calls SM `2147483643` (Hunter's Dream Warp Dialog).
+2. **Chalice Dungeon Topology (`m29_00_00_00`, `t290110`–`t290119`)**:
+   - State 1: `非稼動状態_非マルチ中` (Unlit lamp) $\to$ State 6: calls SM `2147483639` (Lamp Ignition).
+   - State 2: `稼動状態_非マルチ中` (Lit lamp) $\to$ State 3 $\to$ State 5: calls SM `2147483643` (Hunter's Dream Warp Dialog).
+
+#### 32.6.1 The Unlit Ignition Invariant (Refutation of "Dual-Hook")
+Early attempts hypothesized a "dual-hook" requirement, intercepting both unlit and lit states.
+**Proof of Failure**: Redirecting the ignition state (State 7 in overworld, State 6 in chalice) to SM `2147483500` suppresses `SM 2147483639`. As a result, newly discovered unlit lanterns present a warp menu before ignition, failing to trigger the ignition animation or set the lamp persistent active flag. Unlit lamps become permanently broken.
+**Remediation**: The ignition state calling SM `2147483639` is preserved 100% bit-for-bit. ONLY the lit lamp state calling SM `2147483643` is redirected to SM `2147483500`.
+
+#### 32.6.2 Elimination of Frame 0 Abort in Dialogue Menu Condition
+In EzState, `ShowShopMessage` initializes asynchronously across the render pipeline.
+If the condition tree evaluates:
+$$\text{ExitCond} = (\text{Result} = 0) \lor (\text{Result} = 99) \lor (\text{IsTalkExclusiveMenuOpen}() = 0)$$
+On frame 0 upon entering State 0, `IsTalkExclusiveMenuOpen()` returns `0` before the menu renders, immediately fulfilling the exit transition to terminal State 19. The menu closes instantly before input processing.
+
+**Canonical Exit Condition Bytecode**:
+$$\text{ExitCond} = (\text{Result} = 0) \lor (\text{Result} = 99)$$
+Bytecode representation (16 bytes):
+`5784a640955784a682630000009599a1`
+- `5784a6`: `GetTalkListEntryResult()`
+- `4095`: `0 ==`
+- `826300000095`: `99 ==`
+- `99`: Logical OR (`||`)
+- `a1`: Condition terminator
+This guarantees that State 0 remains active indefinitely until the player selects a choice or explicitly cancels.
