@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SwitcherIPCContract",
+  "description": "Schema for CLI / IPC commands controlling in-engine mod switching.",
+  "type": "object",
+  "properties": {
+    "command": {
+      "type": "string",
+      "enum": ["TOGGLE", "SET_MODE", "GET_STATUS", "SYNC_OVERLAY"]
+    },
+    "target_mode": {
+      "type": "string",
+      "enum": ["RETRO_5PILLAR", "VANILLA_HD"]
+    },
+    "trigger_reload": {
+      "type": "boolean",
+      "default": true
+    },
+    "fade_ms": {
+      "type": "integer",
+      "default": 200
+    }
+  },
+  "required": ["command"],
+  "additionalProperties": false
+}

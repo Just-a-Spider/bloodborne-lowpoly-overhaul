@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LanternMenuContract",
+  "description": "Schema for injected lantern dialogue menu options and text IDs.",
+  "type": "object",
+  "properties": {
+    "fmg_category": {
+      "type": "integer",
+      "enum": [30]
+    },
+    "options": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text_id": {
+            "type": "integer"
+          },
+          "label": {
+            "type": "string"
+          },
+          "target_mode": {
+            "type": "string",
+            "enum": ["RETRO_5PILLAR", "VANILLA_HD"]
+          },
+          "event_flag": {
+            "type": "integer"
+          }
+        },
+        "required": ["text_id", "label", "target_mode", "event_flag"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["fmg_category", "options"],
+  "additionalProperties": false
+}

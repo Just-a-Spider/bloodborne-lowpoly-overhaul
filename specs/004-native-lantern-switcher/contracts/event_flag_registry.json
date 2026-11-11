@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "EventFlagRegistry",
+  "description": "Registry of reserved event flags for in-game mod signaling.",
+  "type": "object",
+  "properties": {
+    "flags": {
+      "type": "object",
+      "properties": {
+        "999901": {
+          "type": "string",
+          "enum": ["REQUEST_RETRO_5PILLAR"]
+        },
+        "999902": {
+          "type": "string",
+          "enum": ["REQUEST_VANILLA_HD"]
+        }
+      },
+      "required": ["999901", "999902"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["flags"],
+  "additionalProperties": false
+}
