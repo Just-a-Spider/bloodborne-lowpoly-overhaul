@@ -72,8 +72,8 @@ Features:
 - Zeroed specular reflectance and gloss (killing oily PBR shine for matte retro rendering).
 {'- Preserved Havok cloth physics on 156 cloth-bearing armors (capes/skirts flutter without solver crash).' if is_cloth else '- Decoupled Havok cloth: All capes/skirts converted to skeletal skinning (zero Havok overhead).'}
 
-How to Use with bbport:
-Enable this mod in mods.json or via the bbport launcher UI.
+How to Use:
+Enable this mod in mods.json or via your mod manager.
 When loaded alongside 'Bloodborne Low-Poly Overhaul', it layers on top and updates all player armors.
 """
     (mod_dir / "README.txt").write_text(readme_content, encoding="utf-8")
@@ -132,8 +132,8 @@ def main():
     parser.add_argument("--active", choices=["cloth", "stiff", "none"], default="cloth", help="Active mod in mods.json")
     parser.add_argument("--workers", type=int, default=12, help="Parallel worker threads")
     parser.add_argument("--ratio-armor", type=float, default=0.08, help="Decimation ratio for armors")
-    parser.add_argument("--mods-dir", type=Path, default=DEFAULT_MODS_DIR, help="bbport mods root")
-    parser.add_argument("--config", type=Path, default=DEFAULT_MODS_JSON, help="bbport mods.json config")
+    parser.add_argument("--mods-dir", type=Path, default=DEFAULT_MODS_DIR, help="Target mods root directory")
+    parser.add_argument("--config", type=Path, default=DEFAULT_MODS_JSON, help="Target mods.json config path")
     parser.add_argument("--vanilla-parts", type=Path, default=DEFAULT_VANILLA_PARTS, help="Path to vanilla parts")
     args = parser.parse_args()
 

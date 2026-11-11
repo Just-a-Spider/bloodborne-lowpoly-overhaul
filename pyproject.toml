@@ -10,6 +10,7 @@ requires-python = ">=3.13"
 dependencies = [
     "bsdiff4>=1.4.1",
     "ispc-texcomp>=1.0.1",
+    "jsonschema>=4.26.0",
     "numpy>=2.5.4",
     "pillow>=12.3.0",
     "pyfqmr>=0.5.0",
@@ -20,4 +21,8 @@ dependencies = [
 
 [tool.uv]
 package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 

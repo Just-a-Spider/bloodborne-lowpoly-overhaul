@@ -67,6 +67,12 @@ def main():
         help="Output patch container file path",
     )
     parser.add_argument(
+        "--mod-name",
+        type=str,
+        default=None,
+        help="Canonical mod name embedded in container metadata (default: auto-detected from mod.json or directory name)",
+    )
+    parser.add_argument(
         "--verify",
         action="store_true",
         default=True,
@@ -164,12 +170,25 @@ def main():
     # 3. Assemble patch container (Header + Manifest + Payload)
     print("-" * 65)
     print("Writing finalized patch container...")
+    mod_name = args.mod_name
+    if not mod_name:
+        mod_json_file = mod_dir / "mod.json"
+        if mod_json_file.is_file():
+            try:
+                mod_meta = json.loads(mod_json_file.read_text(encoding="utf-8"))
+                mod_name = mod_meta.get("name")
+            except Exception:
+                pass
+        if not mod_name:
+            mod_name = mod_dir.name
+
     metadata = {
         "format": "BBLPO_XOR_CONTAINER",
         "version": "1.0.0",
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "game_version": "1.09",
         "vanilla_title": "Bloodborne (CUSA03173)",
+        "mod_name": mod_name,
         "total_files": total_files,
         "files": entries,
     }

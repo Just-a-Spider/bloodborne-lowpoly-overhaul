@@ -49,13 +49,17 @@ for obj in bpy.data.objects:
     ratio = default_ratio
 
     # Semantic decimation ratios for world objects
-    if any(k in obj_name_lower for k in ("door", "chest", "gate", "lever", "elevator", "gimmick", "box")):
+    if any(k in obj_name_lower for k in ("corpse", "c1040", "c1010", "c1270", "waste", "body")):
+        ratio = 0.15  # 85% reduction on dense cadaver heaps
+    elif any(k in obj_name_lower for k in ("cage", "prison", "dogcage", "fence")):
+        ratio = 0.20  # 80% reduction on cage bars
+    elif any(k in obj_name_lower for k in ("door", "chest", "gate", "lever", "elevator", "gimmick", "box")):
         ratio = 0.25
     elif any(k in obj_name_lower for k in ("cloth", "banner", "flag", "curtain", "awning", "canopy")):
         ratio = 0.25
     elif tris_orig > 10000:
         # High-poly statuary, massive coffins, carriages
-        ratio = 0.20
+        ratio = 0.15
     else:
         ratio = default_ratio
 

@@ -10,8 +10,10 @@ Transforms Bloodborne's HD Scaleform menu and HUD textures into authentic retro 
 6. Swizzles to PS4 GCN Morton micro-tiles across all mip levels.
 """
 
-import sys, os, struct, time
+import sys, os, struct, time, re
 from pathlib import Path
+from dataclasses import dataclass
+from enum import Enum
 import numpy as np
 from PIL import Image
 
@@ -25,6 +27,63 @@ from soulstruct.dcx import decompress, compress
 
 VANILLA_MENU_DIR = Path("CUSA03173/dvdroot_ps4/menu")
 SANDBOX_MENU_DIR = Path("CUSA03173-PSX/dvdroot_ps4/menu")
+MOD_MENU_DIR = Path("mods/Bloodborne Retro HUD and UI/dvdroot_ps4/menu")
+
+class UIPolicy(Enum):
+    DEMAKE_RETRO = "demake_retro"
+    BYPASS_PRISTINE = "bypass_pristine"
+
+@dataclass
+class UIProcessingRule:
+    name: str
+    policy: UIPolicy
+    downscale_factor: int = 2
+    palette_depth: int = 15
+    preserve_alpha: bool = True
+    group: str = "general"
+
+def get_processing_rule(name: str, width: int, height: int, filter_group: str = "all") -> UIProcessingRule:
+    """Determines the exact transformation policy and parameters for a UI texture record."""
+    # 1. Controller button prompts & localization markers: strictly bypassed pristine
+    if name.startswith("KG_") or name.startswith("MENU_LNG_") or max(width, height) <= 64:
+        return UIProcessingRule(name=name, policy=UIPolicy.BYPASS_PRISTINE, downscale_factor=1, group="prompts_whitelist")
+
+    # 2. Assign group
+    if name.startswith("MENU_Common_00001") or name.startswith("MENU_Common_00002") or \
+       name.startswith("MENU_Common_00003") or name.startswith("MENU_Common_00004") or \
+       name.startswith("MENU_Common_00005"):
+        group = "us1_vitals"
+    elif name.startswith("MENU_Icon_"):
+        group = "us1_icons"
+    elif name.startswith("MENU_Common_0009") or name.startswith("MENU_Common_0010") or \
+         name.startswith("MENU_Common_0011"):
+        group = "us2_prompts_dialogue"
+    elif name.startswith("MENU_Common_0012") or name.startswith("MENU_Common_0013") or \
+         name.startswith("MENU_Common_Loading"):
+        group = "us3_boss_banners"
+    else:
+        group = "other_ui"
+
+    # 3. Check group filter if requested
+    if filter_group != "all":
+        if filter_group == "us1" and group not in ("us1_vitals", "us1_icons"):
+            return UIProcessingRule(name=name, policy=UIPolicy.BYPASS_PRISTINE, downscale_factor=1, group=group)
+        elif filter_group == "us2" and group != "us2_prompts_dialogue":
+            return UIProcessingRule(name=name, policy=UIPolicy.BYPASS_PRISTINE, downscale_factor=1, group=group)
+        elif filter_group == "us3" and group != "us3_boss_banners":
+            return UIProcessingRule(name=name, policy=UIPolicy.BYPASS_PRISTINE, downscale_factor=1, group=group)
+
+    # 4. Determine downscale factor: 4x for large 2048px atlases, 2x for <= 1024px
+    factor = 4 if max(width, height) >= 2048 else 2
+
+    return UIProcessingRule(
+        name=name,
+        policy=UIPolicy.DEMAKE_RETRO,
+        downscale_factor=factor,
+        palette_depth=15,
+        preserve_alpha=True,
+        group=group
+    )
 
 def demake_ui_rgba(rgba: np.ndarray, downscale_factor: int = 2) -> np.ndarray:
     """Applies authentic 15-bit RGB555 retro pixelation to an uncompressed RGBA image."""
@@ -44,16 +103,17 @@ def demake_ui_rgba(rgba: np.ndarray, downscale_factor: int = 2) -> np.ndarray:
     im_psx = im_quant.resize((w, h), Image.Resampling.NEAREST)
     return np.array(im_psx)
 
-def process_ui_tpf(tpf_bytes: bytes, downscale_factor: int = 2, icons_only: bool = True, verbose: bool = True) -> bytearray:
+def process_ui_tpf(tpf_bytes: bytes, filter_group: str = "all", verbose: bool = True) -> tuple[bytearray, int, int]:
     """Processes in-memory UI TPF data with retro pixel art conversion for BC7 and BC1."""
     tpf = bytearray(tpf_bytes)
     if tpf[:4] != b'TPF\x00':
-        return tpf
+        return tpf, 0, 0
 
     bc7_settings = ispc_texcomp.BC7EncSettings.from_profile('alpha_veryfast')
 
     tex_count = struct.unpack('<I', tpf[8:12])[0]
     modified_count = 0
+    bypassed_count = 0
 
     for i in range(tex_count):
         e = tpf[0x10 + i*36 : 0x10 + (i+1)*36]
@@ -68,12 +128,9 @@ def process_ui_tpf(tpf_bytes: bytes, downscale_factor: int = 2, icons_only: bool
         h = (unk2 >> 16) & 0xFFFF
         fmt = unk1 & 0xFF
 
-        # Filter: by default demake icons only to keep Scaleform 9-slice borders, text frames, and prompts pristine
-        if icons_only and not name.startswith('MENU_Icon_'):
-            continue
-
-        # Skip small controller button prompts and language markers to maintain legibility
-        if name.startswith('KG_') or name.startswith('MENU_LNG_') or max(w, h) <= 64:
+        rule = get_processing_rule(name, w, h, filter_group=filter_group)
+        if rule.policy == UIPolicy.BYPASS_PRISTINE:
+            bypassed_count += 1
             continue
 
         # Unpack num_mips (unk3) from FromSoftware TPF record (UI textures are strictly 1 mip level)
@@ -92,10 +149,11 @@ def process_ui_tpf(tpf_bytes: bytes, downscale_factor: int = 2, icons_only: bool
         elif fmt in (0, 1): # BC1
             rgba0 = decode_bc1_to_rgba(linear0, pw0, ph0)[:h0, :w0]
         else:
+            bypassed_count += 1
             continue
 
-        # 3. Apply Retro retro Pixelation
-        rgba_psx = demake_ui_rgba(rgba0, downscale_factor=downscale_factor)
+        # 3. Apply Retro Pixelation
+        rgba_psx = demake_ui_rgba(rgba0, downscale_factor=rule.downscale_factor)
         im_psx_master = Image.fromarray(rgba_psx)
 
         # 4. Generate & Re-encode ONLY the authored mips (num_mips)
@@ -125,44 +183,36 @@ def process_ui_tpf(tpf_bytes: bytes, downscale_factor: int = 2, icons_only: bool
 
         modified_count += 1
         if verbose:
-            print(f"  [UI] Demaked {name} ({w}x{h}, fmt=0x{fmt:02x}) -> retro {w//downscale_factor}x{h//downscale_factor} texels (mips={num_mips})")
+            print(f"  [UI] Demaked {name} ({w}x{h}, fmt=0x{fmt:02x}) -> retro {w//rule.downscale_factor}x{h//rule.downscale_factor} texels (mips={num_mips}) [{rule.group}]")
 
-    return tpf
+    return tpf, modified_count, bypassed_count
 
-def demake_ui_file(src_path: Path, dst_path: Path, downscale_factor: int = 2, icons_only: bool = True) -> bool:
+def demake_ui_file(src_path: Path, dst_path: Path, filter_group: str = "all", verbose: bool = True) -> bool:
     """Demakes a .tpf.dcx UI archive."""
     if not src_path.exists():
         print(f"Error: Source file not found: {src_path}")
         return False
 
-    mode_str = "Icons Only" if icons_only else "All UI (Full)"
-    print(f"\nProcessing UI Archive: {src_path.name} (mode: {mode_str}, factor: {downscale_factor}x)...")
+    print(f"\nProcessing UI Archive: {src_path.name} (filter: {filter_group})...")
     start_t = time.time()
     raw_data, dcx_type = decompress(str(src_path))
-    demade_tpf = process_ui_tpf(raw_data, downscale_factor=downscale_factor, icons_only=icons_only, verbose=True)
+    demade_tpf, mod_cnt, byp_cnt = process_ui_tpf(raw_data, filter_group=filter_group, verbose=verbose)
 
     dst_path.parent.mkdir(parents=True, exist_ok=True)
     comp_data = compress(bytes(demade_tpf), dcx_type=dcx_type)
     dst_path.write_bytes(comp_data)
     elapsed = time.time() - start_t
-    print(f"[SUCCESS] Demaked {src_path.name} in {elapsed:.2f}s -> {dst_path}")
+    print(f"[SUCCESS] Demaked {src_path.name} in {elapsed:.2f}s (modified {mod_cnt}, bypassed {byp_cnt}) -> {dst_path}")
     return True
-
-# Compatibility alias
-demake_common_ui_tpf = demake_ui_file
 
 if __name__ == '__main__':
     target = VANILLA_MENU_DIR / "common.tpf.dcx"
     dest = SANDBOX_MENU_DIR / "common.tpf.dcx"
-    factor = 2
-    icons_only = True
-
+    filter_group = "all"
     for arg in sys.argv[1:]:
-        if arg == '--all-ui':
-            icons_only = False
-        elif arg == '--icons-only':
-            icons_only = True
-        elif arg.isdigit():
-            factor = int(arg)
+        if arg.startswith("--filter="):
+            filter_group = arg.split("=")[1]
+        elif arg in ("us1", "us2", "us3", "all"):
+            filter_group = arg
 
-    demake_ui_file(target, dest, downscale_factor=factor, icons_only=icons_only)
+    demake_ui_file(target, dest, filter_group=filter_group)

@@ -45,6 +45,8 @@ from soulstruct.flver.core import FLVER  # noqa: E402
 
 from flver_to_rigged_gltf import flver_to_rigged_glb  # noqa: E402
 from rigged_gltf_to_flver import compile_glb_to_flver  # noqa: E402
+from bone_transform_utils import update_flver_bounding_boxes  # noqa: E402
+from geometry_sanitizer import sanitize_submesh_geometry, synchronize_flver_facesets  # noqa: E402
 
 VANILLA_OBJ_DIR = REPO_ROOT / "CUSA03173" / "dvdroot_ps4" / "obj"
 SANDBOX_OBJ_DIR = REPO_ROOT / "CUSA03173-PSX" / "dvdroot_ps4" / "obj"
@@ -112,7 +114,8 @@ def process_single_obj_archive(
             or stem.startswith("o2931")
         )
         is_chalice_elevator = (
-            stem.startswith("o2902") or stem.startswith("o2903") or stem.startswith("o2904")
+            stem.startswith("o29000") or stem.startswith("o29001")
+            or stem.startswith("o29020") or stem.startswith("o29030") or stem.startswith("o29047")
         )
 
         # 9. Item loot corpses (o000600..o000655): keep pristine interaction dummies, collision and physics alignment
@@ -179,12 +182,35 @@ def process_single_obj_archive(
             except Exception:
                 pass
 
-        if (
+        is_target_cage = (
+            stem.startswith("o29025") or stem.startswith("o29026") or stem.startswith("o29027")
+            or stem.startswith("o29028") or stem.startswith("o29035") or stem.startswith("o29037")
+            or stem.startswith("o29498") or stem.startswith("o29499")
+            or stem.startswith("o29783") or stem.startswith("o29784") or stem.startswith("o29911")
+            or stem.startswith("o29912") or stem.startswith("o29961")
+            or stem.startswith("o32231") or stem.startswith("o32232") or stem in {"o260303", "o260310"}
+            or stem.startswith("o24301") or stem in {"o270102", "o270104", "o273011", "o281000", "o281001", "o282020"}
+        )
+        is_target_cadaver = (
+            stem.startswith("o29721") or stem.startswith("o29850") or stem.startswith("o29851")
+            or stem.startswith("o29852") or stem.startswith("o2971") or stem.startswith("o2948")
+            or stem.startswith("o2940") or stem.startswith("o2968")
+            or stem.startswith("o2880") or stem.startswith("o2881")
+            or stem in {"o230150", "o233001", "o240092", "o241050", "o343102"}
+        )
+
+        should_bypass = (
             is_ladder or is_chalice_door_statue or is_sensitive_door or has_anibnd or is_stair
             or is_chalice_composite or is_chalice_chandelier or is_chalice_statue or is_chalice_elevator
             or is_loot_corpse or is_celestial or is_yahargul_composite or is_nightmare_composite
             or is_lecture_composite or has_offset_bones
-        ):
+        )
+
+        # Dungeon cages and cadavers are explicitly un-bypassed and demade
+        if is_target_cage or is_target_cadaver:
+            should_bypass = False
+
+        if should_bypass:
             dest_path = sandbox_path if deploy else stage_path
             dest_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(vanilla_path, dest_path)
@@ -258,6 +284,26 @@ def process_single_obj_archive(
 
             # 3. Recompile demade glTF to native Bloodborne FLVER with Havok cloth decoupling
             c_flv = compile_glb_to_flver(out_glb, flv_orig, decouple_cloth=True)
+
+            # 4. Sanitize submesh geometry (weld vertices V < T, cull spikes, clamp ground)
+            for mi, m in enumerate(c_flv.meshes):
+                if m.face_sets and m.vertex_arrays:
+                    v_arr = m.vertex_arrays[0].array
+                    f_arr = m.face_sets[0].vertex_indices
+                    c_verts, c_faces, _, _ = sanitize_submesh_geometry(
+                        v_arr,
+                        f_arr,
+                        max_edge_limit=2.0 if is_target_cadaver else 50.0,
+                        ground_clamp_y=-0.05 if is_target_cadaver else None,
+                    )
+                    m.vertex_arrays[0].array = c_verts
+                    if len(m.vertex_arrays) > 1:
+                        m.vertex_arrays[1].array = c_verts.copy()
+                    m.face_sets[0].vertex_indices = c_faces
+
+            # 5. Synchronize FaceSets and accumulate bone hierarchy bounding boxes
+            synchronize_flver_facesets(c_flv)
+            update_flver_bounding_boxes(c_flv)
 
             tris_new = sum(len(m.face_sets[0].vertex_indices) for m in c_flv.meshes if m.face_sets)
             total_new_tris += tris_new
