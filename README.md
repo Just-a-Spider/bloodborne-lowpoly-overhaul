@@ -78,62 +78,48 @@ Reconstruct standalone mod folders on any machine with **zero external dependenc
 
 ---
 
-## Release Artifacts Inventory
+## Release Files
 
-All `.patch` containers are compiled with SHA256 integrity verification. Verify downloaded files using:
-```bash
-sha256sum -c SHA256SUMS.txt
-```
+| File | Size | Description |
+|---|---|---|
+| `bloodborne_retro_maps.patch` | 548 MB | **Maps**: Low-poly world geometry and retro textures |
+| `bloodborne_retro_props.patch` | 105 MB | **Props**: Scenery, doors, chests, and lanterns |
+| `bloodborne_retro_armors_cloth.patch` | 907 MB | **Armors (Cloth)**: Low-poly gear with dynamic cloth physics |
+| `bloodborne_retro_armors_stiff.patch` | 827 MB | **Armors (Stiff)**: Low-poly gear with classic stiff retro physics |
+| `bloodborne_retro_characters.patch` | 189 MB | **Characters**: Enemies, bosses, NPCs, and the Plain Doll |
+| `bloodborne_retro_hud.patch` | 4 MB | **HUD & UI**: Retro vitals gauges, icons, and frames |
+| `apply_patch.exe` | 669 KB | Standalone Windows patcher (GUI folder picker, zero setup) |
+| `apply_patch.py` | 14 KB | Standalone Python patcher (Linux / macOS) |
 
-| Artifact File | Size | Target Pillar / Description | SHA256 Digest |
-|---|---|---|---|
-| `bloodborne_retro_maps.patch` | 548.4 MB | **Pillar 1: Maps** (Downscaled BC1 textures, all regions) | `b1565863c4e29eab290f6e98dfd377f21d274fc4a40c9b5be3d99d4cd76dc2ff` |
-| `bloodborne_retro_props.patch` | 105.5 MB | **Pillar 2: Props** (867 scenery props, doors, lamps) | `57c49714faa66099d191034f60d161aee5a1c75f8dd56ebae80d20eba5a35789` |
-| `bloodborne_retro_armors_cloth.patch` | 907.4 MB | **Pillar 3A: Armors (Cloth)** (Dynamic Havok physics) | `7c53bc057ca025d85ca944493481baec389b5c476408025db71bee6847a5f6bd` |
-| `bloodborne_retro_armors_stiff.patch` | 827.0 MB | **Pillar 3B: Armors (Stiff)** (Decoupled stiff physics) | `ab81f1ee119bb1f7382cc46823a45633d1be54581f287eb2644817d367990a9f` |
-| `bloodborne_retro_characters.patch` | 189.1 MB | **Pillar 4: Characters** (Enemies, bosses, NPCs, Doll) | `f0b2d570f48ca795c4e513ade3f180a3da55c39143bc6708a17149ddaa66a0c8` |
-| `bloodborne_retro_hud.patch` | 4.1 MB | **Pillar 5: HUD & UI** (Retro vitals, prompts, frames) | `6284dc9045d4be864f2c79dd51961581527c7d67b77cba1da3337417e2e940e0` |
-| `apply_patch.exe` | 669.0 KB | **Standalone Windows Native Reconstructor** (GUI folder browser, zero dependencies) | `1cc39047fbc0089e6c1831fe585b51fbea73d85cdd0bcd837dfe06eeba983372` |
-| `apply_patch.py` | 14.3 KB | **Standalone Python Reconstructor** (Zero external libraries) | `b225d15abffb8a3d9abc8444ed58a425f1b05bb98a223cb74a8c2f529d82d25b` |
+> Checksums available in `SHA256SUMS.txt` on the [Releases](https://github.com/Just-a-Spider/bloodborne-lowpoly-overhaul/releases/latest) page.
 
 ---
 
-## Modder & Pipeline Guide (Rebuilding from Scratch)
+## Documentation & Source
 
-For researchers and modders wishing to modify geometric decimation ratios, bone weight interpolation algorithms, or palette quantization formulas from source:
+Guides for modders, contributors, and technical deep-dives:
 
-### Pipeline Prerequisites:
-- Python 3.12+ managed via `uv`.
-- Blender 4.x installed and present in your system `PATH`.
-- System libraries: `libgomp`, `openmp`.
+- **[Demake Guide](docs/BB_PSX_DEMAKE_GUIDE.md)**: Architecture, visual findings, and engine quirks.
+- **[Pipeline & Build Guide](docs/PIPELINE.md)**: Asset creation, building from scratch, and patch packaging.
+- **[Contributing](CONTRIBUTING.md)**: Development standards, rigging invariants, and pull requests.
 
-### 1. Validate Modular Structure:
+<details>
+<summary>Building from Source (Pipeline Commands)</summary>
+
+### Prerequisites
+- Python 3.12+ managed via `uv`
+- Blender 4.x in system `PATH`
+- System libraries: `libgomp`, `openmp`
+
 ```bash
+# Validate structure:
 uv run python tools/pipeline/modular_structure_validator.py --mods-dir mods
-```
 
-### 2. Package Modular Mod Deliverables:
-```bash
+# Package modular deliverables:
 uv run python tools/pipeline/package_modular_mods.py --pillar all --clean
-```
 
-### 3. Generate & Verify Distribution Patches:
-```bash
-# Generate patch for individual modular mod:
+# Generate patch:
 uv run python tools/pipeline/create_patch.py --vanilla CUSA03173 --mod "mods/Bloodborne Retro HUD and UI" --out dist/bloodborne_retro_hud.patch
-
-# Audit all release artifacts and generate checksum manifest:
-uv run python tools/pipeline/verify_release_artifacts.py --vanilla CUSA03173 --dist dist --manifest dist/SHA256SUMS.txt
 ```
 
----
-
-## Technical Documentation & Workflows
-
-- **[ADDITIONS.md](docs/ADDITIONS.md)**: Asset creation, decimation parameters, texture quantization, and FLVER injection pipeline.
-- **[RECREATION.md](docs/RECREATION.md)**: Step-by-step instructions to rebuild mod assets algorithmically from retail vanilla `CUSA03173`.
-- **[DISTRIBUTION.md](docs/DISTRIBUTION.md)**: Differential XOR patch generation, checksum manifests, and release packaging.
-- **[COLLABORATION.md](docs/COLLABORATION.md)**: Contributor standards, rigging invariants, Havok cloth physics rules, and PR verification gates.
-- **[BB_PSX_DEMAKE_GUIDE.md](docs/BB_PSX_DEMAKE_GUIDE.md)**: Technical root causes, Soulstruct FLVER deserializer quirks, modular architecture, and pipeline verification.
-- **[BB_PSX_DEMAKE_MATH_AND_FINDINGS.md](docs/BB_PSX_DEMAKE_MATH_AND_FINDINGS.md)**: Empirical framerate benchmarks, VRAM breakdown, Morton swizzle math, and binary container layout.
-- **[RELEASE_NOTES.md](dist/RELEASE_NOTES.md)**: Release v1.2.0 features, modular pillar descriptions, and SHA256 checksums.
+</details>

@@ -1,4 +1,4 @@
-# Contributor & Collaboration Standards
+# Contributing to Bloodborne: Low-Poly Overhaul
 
 This document establishes the technical invariants, git conventions, and verification gates required for contributing to *Bloodborne: Low-Poly Overhaul*.
 
