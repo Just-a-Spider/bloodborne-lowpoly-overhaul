@@ -251,6 +251,11 @@ def generate_checksum_manifest(
         script_sha = compute_file_sha256(apply_patch_script)
         lines.append(f"{script_sha}  apply_patch.py")
 
+    apply_patch_exe = manifest_out.parent / "apply_patch.exe"
+    if apply_patch_exe.is_file():
+        exe_sha = compute_file_sha256(apply_patch_exe)
+        lines.append(f"{exe_sha}  apply_patch.exe")
+
     manifest_out.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"Checksum manifest written to: {manifest_out}")
 

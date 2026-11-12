@@ -10,6 +10,7 @@ __pycache__/
 build/
 develop-eggs/
 dist/*.patch
+dist/*.exe
 !dist/
 !dist/SHA256SUMS.txt
 !dist/RELEASE_NOTES.md

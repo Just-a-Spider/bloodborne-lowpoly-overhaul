@@ -1,5 +1,5 @@
 # Bloodborne: Low-Poly Overhaul - Distribution SHA256 Checksums
-# Generated: 2026-11-11T21:46:29Z
+# Generated: 2026-11-12T01:33:43Z
 # Verify using: sha256sum -c SHA256SUMS.txt
 
 7c53bc057ca025d85ca944493481baec389b5c476408025db71bee6847a5f6bd  bloodborne_retro_armors_cloth.patch
@@ -9,3 +9,4 @@ f0b2d570f48ca795c4e513ade3f180a3da55c39143bc6708a17149ddaa66a0c8  bloodborne_ret
 b1565863c4e29eab290f6e98dfd377f21d274fc4a40c9b5be3d99d4cd76dc2ff  bloodborne_retro_maps.patch
 57c49714faa66099d191034f60d161aee5a1c75f8dd56ebae80d20eba5a35789  bloodborne_retro_props.patch
 b225d15abffb8a3d9abc8444ed58a425f1b05bb98a223cb74a8c2f529d82d25b  apply_patch.py
+b567c3f17ab1ba1dc41cebf93ea33d183c1b68d6ca9a9ad2dcc456aa14a873d8  apply_patch.exe

@@ -55,23 +55,30 @@ Starting with Release v1.2.0, the overhaul is decoupled into **five independent 
 
 ## Player Quick Start
 
-Reconstruct standalone mod folders on any machine using standard Python 3.9+ with **zero external dependencies**.
+Reconstruct standalone mod folders on any machine with **zero external dependencies**.
 
 ### Prerequisites:
 - A legal copy of *Bloodborne* v1.09 (`CUSA03173/`).
-- Python 3.9 or higher (standard library only; no pip dependencies required).
-- Download `apply_patch.py` and desired `.patch` files from the [Latest Release](https://github.com/Just-a-Spider/bloodborne-lowpoly-overhaul/releases/latest).
+- Download your desired `.patch` files and reconstructor from [Latest Release](https://github.com/Just-a-Spider/bloodborne-lowpoly-overhaul/releases/latest):
+  - **Windows**: Download standalone native `apply_patch.exe` (no Python needed).
+  - **Linux / macOS / Python**: Download `apply_patch.py` (requires standard Python 3.9+).
 
 ---
 
 ### Option A: Install Individual Modular Mod Pillars (Recommended)
 
-1. Reconstruct a specific pillar (for example, Retro HUD and UI):
+1. **Windows Native (`apply_patch.exe`)**:
+   - Double-click `apply_patch.exe` for interactive auto-detection and setup, OR:
+   ```cmd
+   apply_patch.exe --game C:\path\to\CUSA03173 --all-patches --patch-dir dist --out C:\path\to\mods
+   ```
+
+2. **Python Reconstructor (`apply_patch.py`)**:
+   - Reconstruct a specific pillar (for example, Retro HUD and UI):
    ```bash
    python3 apply_patch.py --game /path/to/CUSA03173 --patch bloodborne_retro_hud.patch --out /path/to/mods/bloodborne_retro_hud
    ```
-
-2. Reconstruct all modular pillars at once:
+   - Reconstruct all modular pillars at once:
    ```bash
    python3 apply_patch.py --game /path/to/CUSA03173 --all-patches --patch-dir dist --out /path/to/mods
    ```
@@ -110,7 +117,8 @@ sha256sum -c SHA256SUMS.txt
 | `bloodborne_retro_armors_stiff.patch` | 827.0 MB | **Pillar 3B: Armors (Stiff)** (Decoupled stiff physics) | `ab81f1ee119bb1f7382cc46823a45633d1be54581f287eb2644817d367990a9f` |
 | `bloodborne_retro_characters.patch` | 189.1 MB | **Pillar 4: Characters** (Enemies, bosses, NPCs, Doll) | `f0b2d570f48ca795c4e513ade3f180a3da55c39143bc6708a17149ddaa66a0c8` |
 | `bloodborne_retro_hud.patch` | 4.1 MB | **Pillar 5: HUD & UI** (Retro vitals, prompts, frames) | `6284dc9045d4be864f2c79dd51961581527c7d67b77cba1da3337417e2e940e0` |
-| `apply_patch.py` | 14.3 KB | **Standalone Python Reconstructor** (Zero dependencies) | `b225d15abffb8a3d9abc8444ed58a425f1b05bb98a223cb74a8c2f529d82d25b` |
+| `apply_patch.exe` | 661.0 KB | **Standalone Windows Native Reconstructor** (Zero dependencies) | `b567c3f17ab1ba1dc41cebf93ea33d183c1b68d6ca9a9ad2dcc456aa14a873d8` |
+| `apply_patch.py` | 14.3 KB | **Standalone Python Reconstructor** (Zero external libraries) | `b225d15abffb8a3d9abc8444ed58a425f1b05bb98a223cb74a8c2f529d82d25b` |
 
 ---
 
