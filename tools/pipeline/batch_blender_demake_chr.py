@@ -50,8 +50,10 @@ SANDBOX_CHR_DIR = REPO_ROOT / "CUSA03173-PSX" / "dvdroot_ps4" / "chr"
 STAGE_DIR = Path("/tmp/chr_blender_stage")
 SNAP_SUFFIX = ".snap_pre_blender_chr"
 
-# Protected characters: never touch Plain Doll (c8030)
-PROTECTED_STEMS = {"c8030"}
+# Protected characters:
+# - Plain Doll (c8030): Pristine cloth physics and face rig
+# - Celestial Minion / Emissary sprout tentacles (c2501, c2571): 453-bone delicate micro-joint rig
+PROTECTED_STEMS = {"c8030", "c2501", "c2571"}
 
 
 def process_single_chr_archive(
@@ -70,7 +72,10 @@ def process_single_chr_archive(
 
     stem = filename.split(".")[0].lower()
     if stem in PROTECTED_STEMS:
-        return filename, True, 0, 0, "PROTECTED (Plain Doll bypassed)"
+        target_write_path = sandbox_path if deploy else stage_path
+        target_write_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(vanilla_path, target_write_path)
+        return filename, True, 0, 0, f"PROTECTED ({stem} preserved pristine from vanilla)"
 
     worker_temp = Path(tempfile.mkdtemp(prefix=f"bb_blender_chr_{stem}_"))
 

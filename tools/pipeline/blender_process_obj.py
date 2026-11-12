@@ -73,6 +73,31 @@ for obj in bpy.data.objects:
     mod.ratio = ratio
     mod.use_collapse_triangulate = True
 
+    # For interactive doors with offset hinge pivot (e.g. o282020 Yahar'gul cell gate),
+    # pin the hinge axis (X ≈ 0.625), bottom floor boundary, and wall contacts
+    if obj_id == "o282020":
+        vg = obj.vertex_groups.new(name="Pin_Hinge_Frame")
+        pinned = []
+        unpinned = []
+        for v in obj.data.vertices:
+            # Hinge cylinder at X=0.625, floor contact Y<-0.25, wall anchors X<-2.48 or X>2.28 or Y>8.25
+            if (
+                abs(v.co.x - 0.625) <= 0.055
+                or v.co.y < -0.25
+                or v.co.x < -2.48
+                or v.co.x > 2.28
+                or v.co.y > 8.25
+            ):
+                pinned.append(v.index)
+            else:
+                unpinned.append(v.index)
+        if pinned:
+            vg.add(pinned, 0.0, 'REPLACE')
+            vg.add(unpinned, 1.0, 'REPLACE')
+            mod.vertex_group = vg.name
+            mod.invert_vertex_group = False
+            print(f"Pinned {len(pinned)} hinge/frame contact vertices on {obj_id} (weight=0.0)")
+
     # Apply modifier safely
     bpy.context.view_layer.objects.active = obj
     try:
