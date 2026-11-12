@@ -95,6 +95,27 @@ Reconstruct standalone mod folders on any machine with **zero external dependenc
 
 ---
 
+## Interactive 3D Model Viewer
+
+Inspect and verify any character (`chr`), prop (`obj`), map chunk, or armor piece (`parts`) in real-time with the built-in diagnostic WebGL viewer:
+
+```bash
+# By asset ID (auto-detected across modular mods and vanilla game):
+uv run python tools/viewer/model_viewer.py c2500
+
+# Or by direct path:
+uv run python tools/viewer/model_viewer.py "mods/Bloodborne Retro Characters/dvdroot_ps4/chr/c2500.chrbnd.dcx"
+
+# Custom vanilla game or mods directory:
+uv run python tools/viewer/model_viewer.py c2500 --game /path/to/CUSA03173 --mods-dir /path/to/mods
+```
+
+- **Live A/B Testing (`Space`)**: Instant side-by-side comparison between pristine vanilla and retro demade models.
+- **Shading Overlays**: Full texture preview, flat faceted shading (`F`), clay mode, and wireframe toggle (`W`).
+- **Real-Time Metrics**: Live triangle/vertex counts, decimation reduction delta, and submesh isolation.
+
+---
+
 ## Documentation & Source
 
 Guides for modders, contributors, and technical deep-dives:

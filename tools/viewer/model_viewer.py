@@ -149,10 +149,85 @@ bpy.ops.render.render(write_still=True)
     finally:
         os.unlink(tf_name)
 
+def find_target_asset(target_str: str, mods_dir: Path, vanilla_dir: Path) -> Path:
+    """Resolves a target file path or asset code (e.g. c2500, o282020) against mods or vanilla game."""
+    target_path = Path(target_str)
+    if target_path.exists():
+        return target_path.resolve()
+
+    if (mods_dir / target_str).exists():
+        return (mods_dir / target_str).resolve()
+    if (vanilla_dir / target_str).exists():
+        return (vanilla_dir / target_str).resolve()
+
+    clean_target = target_str.strip()
+    patterns = [clean_target]
+    if not any(clean_target.endswith(ext) for ext in [".dcx", ".flver", ".gltf", ".glb"]):
+        patterns.extend([
+            f"{clean_target}.chrbnd.dcx",
+            f"{clean_target}.partsbnd.dcx",
+            f"{clean_target}.objbnd.dcx",
+            f"{clean_target}.flver.dcx",
+            f"{clean_target}*.dcx",
+        ])
+
+    for pat in patterns:
+        if mods_dir.exists():
+            matches = list(mods_dir.rglob(pat))
+            if matches:
+                exact = [m for m in matches if m.name.lower() == pat.lower()]
+                return (exact[0] if exact else matches[0]).resolve()
+
+    for pat in patterns:
+        if vanilla_dir.exists():
+            matches = list(vanilla_dir.rglob(pat))
+            if matches:
+                exact = [m for m in matches if m.name.lower() == pat.lower()]
+                return (exact[0] if exact else matches[0]).resolve()
+
+    raise FileNotFoundError(f"Target '{target_str}' not found as file or within mods dir '{mods_dir}' or game dir '{vanilla_dir}'.")
+
+def find_vanilla_counterpart(target_path: Path, vanilla_dir: Path) -> Path | None:
+    """Locates the vanilla counterpart for a given modded asset."""
+    if not vanilla_dir.exists():
+        return None
+
+    # Strategy 1: Check dvdroot_ps4 relative path
+    parts = list(target_path.parts)
+    if "dvdroot_ps4" in parts:
+        idx = parts.index("dvdroot_ps4")
+        rel_subpath = Path(*parts[idx:])
+        cand1 = vanilla_dir / rel_subpath
+        if cand1.exists():
+            return cand1.resolve()
+        cand2 = vanilla_dir / Path(*parts[idx+1:])
+        if cand2.exists():
+            return cand2.resolve()
+
+    # Strategy 2: If target path belongs to dev folder CUSA03173-PSX
+    target_str = str(target_path)
+    if "CUSA03173-PSX" in target_str:
+        cand3 = Path(target_str.replace("CUSA03173-PSX", str(vanilla_dir)))
+        if cand3.exists():
+            return cand3.resolve()
+
+    # Strategy 3: Search by exact filename inside vanilla directory
+    matches = list(vanilla_dir.rglob(target_path.name))
+    if matches:
+        return matches[0].resolve()
+
+    return None
+
 def main():
     parser = argparse.ArgumentParser(description="Bloodborne 3D Model Diagnostic Visualizer")
-    parser.add_argument("target", help="Path to .partsbnd.dcx, .chrbnd.dcx, or .flver.dcx")
-    parser.add_argument("--vanilla", help="Path to vanilla reference file (auto-detected if omitted)")
+    parser.add_argument("target", help="Path to .partsbnd.dcx, .chrbnd.dcx, .flver.dcx, or asset code (e.g. c2500, o282020)")
+    parser.add_argument("--game", "--vanilla-root", dest="game_dir",
+                        default=os.environ.get("BLOODBORNE_GAME_DIR", "CUSA03173"),
+                        help="Path to vanilla Bloodborne game root (default: CUSA03173 or $BLOODBORNE_GAME_DIR)")
+    parser.add_argument("--mods-dir", dest="mods_dir",
+                        default=os.environ.get("BLOODBORNE_MODS_DIR", "mods"),
+                        help="Path to modular mods directory (default: mods or $BLOODBORNE_MODS_DIR)")
+    parser.add_argument("--vanilla", help="Explicit path to vanilla reference file (auto-detected if omitted)")
     parser.add_argument("--port", type=int, default=8080, help="Web server port (default: 8080)")
     parser.add_argument("--no-browser", action="store_true", help="Do not automatically open web browser")
     parser.add_argument("--export-glb", help="Export as .glb file and exit")
@@ -165,11 +240,16 @@ def main():
     parser.add_argument("--focus", choices=["full", "head"], default="full", help="Camera focus framing (default: full)")
 
     args = parser.parse_args()
-    target_path = Path(args.target).resolve()
+    vanilla_dir = Path(args.game_dir).resolve()
+    mods_dir = Path(args.mods_dir).resolve()
 
-    if not target_path.exists():
-        print(f"Error: Target file not found: {target_path}")
+    try:
+        target_path = find_target_asset(args.target, mods_dir, vanilla_dir)
+    except FileNotFoundError as err:
+        print(f"Error: {err}")
         sys.exit(1)
+
+    vanilla_path = Path(args.vanilla).resolve() if args.vanilla else find_vanilla_counterpart(target_path, vanilla_dir)
 
     # In-Engine isolated viewer mode
     if args.engine:
@@ -193,12 +273,6 @@ def main():
 
         # Detect vanilla
         vanilla_arg = []
-        vanilla_path = Path(args.vanilla) if args.vanilla else None
-        if not vanilla_path and "CUSA03173-PSX" in str(target_path):
-            candidate = Path(str(target_path).replace("CUSA03173-PSX", "CUSA03173"))
-            if candidate.exists():
-                vanilla_path = candidate
-
         if vanilla_path and vanilla_path.exists():
             temp_vanilla = Path(tempfile.gettempdir()) / f"{target_path.stem}_vanilla.glb"
             convert_container_to_glb(vanilla_path, temp_vanilla)
@@ -241,7 +315,7 @@ def main():
     # Interactive WebGL Viewer mode
     print("\n=============================================================")
     print(f">>> BLOODBORNE 3D MODEL DIAGNOSTIC VIEWER <<<")
-    print(f"Target Model: {target_path.name}")
+    print(f"Target Model: {target_path.name} ({target_path})")
     print("=============================================================")
 
     print("Extracting FLVER geometry and deswizzling textures...")
@@ -249,20 +323,9 @@ def main():
     print(f"  [PSX Demake] Processed: {len(demake_glb):,} bytes")
 
     # Detect vanilla counterpart
-    vanilla_path = None
-    if args.vanilla:
-        vanilla_path = Path(args.vanilla)
-    else:
-        # Auto-detect if target is in CUSA03173-PSX
-        target_str = str(target_path)
-        if "CUSA03173-PSX" in target_str:
-            candidate = Path(target_str.replace("CUSA03173-PSX", "CUSA03173"))
-            if candidate.exists():
-                vanilla_path = candidate
-
     vanilla_glb = b''
     if vanilla_path and vanilla_path.exists():
-        print(f"Auto-detected Vanilla Clean counterpart: {vanilla_path.name}")
+        print(f"Auto-detected Vanilla Clean counterpart: {vanilla_path.name} ({vanilla_path})")
         try:
             vanilla_glb = convert_container_to_glb(vanilla_path)
             print(f"  [Vanilla Clean] Processed: {len(vanilla_glb):,} bytes")

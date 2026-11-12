@@ -9,8 +9,10 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-sys.path.insert(0, os.path.dirname(__file__))
-import soulstruct_patch
+TOOLS_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(TOOLS_DIR))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 from soulstruct.containers import Binder
 from soulstruct.flver import FLVER
 from ps4_swizzle import deswizzle_level
@@ -430,10 +432,15 @@ def convert_container_to_glb(filepath: str | Path, output_glb: str | Path = None
         if map_match:
             map_id = map_match.group(0)
             map_dir = None
+            game_dir = Path(os.environ.get("BLOODBORNE_GAME_DIR", "CUSA03173"))
+            mods_dir = Path(os.environ.get("BLOODBORNE_MODS_DIR", "mods"))
             for cand_dir in [
                 filepath.parent.parent / map_id,
+                filepath.parent / map_id,
+                game_dir / "dvdroot_ps4/map" / map_id,
+                game_dir / "map" / map_id,
+                mods_dir / "Bloodborne Retro Maps/dvdroot_ps4/map" / map_id,
                 Path("CUSA03173-PSX/dvdroot_ps4/map") / map_id,
-                Path("CUSA03173/dvdroot_ps4/map") / map_id,
             ]:
                 if cand_dir.exists():
                     map_dir = cand_dir
@@ -446,28 +453,30 @@ def convert_container_to_glb(filepath: str | Path, output_glb: str | Path = None
                             clean = t.path.replace('\\', '/')
                             needed.add(Path(clean).stem.lower())
                 for bhd_file in sorted(map_dir.glob("*.tpfbhd")):
-                    if 'patch' in bhd_file.name:
+                    if 'patch' in bhd_file.name or bhd_file.name.startswith('gi_'):
                         continue
                     bdt_file = bhd_file.with_suffix(".tpfbdt")
                     if not bdt_file.exists():
                         continue
                     bhd_bytes = bhd_file.read_bytes()
-                    bdt_bytes = bdt_file.read_bytes()
                     count = struct.unpack('<I', bhd_bytes[12:16])[0]
-                    for i in range(count):
-                        rec_off = 0x40 + i * 36
-                        name_off = struct.unpack('<I', bhd_bytes[rec_off + 32 : rec_off + 36])[0]
-                        name = bhd_bytes[name_off:].split(b'\x00\x00\x00')[0].decode('utf-16le', errors='ignore')
-                        stem = name.split('.')[0].lower()
-                        if stem in needed:
-                            comp_sz = struct.unpack('<Q', bhd_bytes[rec_off + 8 : rec_off + 16])[0]
-                            data_off = struct.unpack('<I', bhd_bytes[rec_off + 24 : rec_off + 28])[0]
-                            from soulstruct.dcx import decompress
-                            try:
-                                tpf_raw, _ = decompress(bytes(bdt_bytes[data_off : data_off + comp_sz]))
-                                all_textures.update(extract_textures_from_tpf(tpf_raw))
-                            except Exception:
-                                pass
+                    with open(bdt_file, 'rb') as bdt_f:
+                        for i in range(count):
+                            rec_off = 0x40 + i * 36
+                            name_off = struct.unpack('<I', bhd_bytes[rec_off + 32 : rec_off + 36])[0]
+                            name = bhd_bytes[name_off:].split(b'\x00\x00\x00')[0].decode('utf-16le', errors='ignore')
+                            stem = name.split('.')[0].lower()
+                            if stem in needed:
+                                comp_sz = struct.unpack('<Q', bhd_bytes[rec_off + 8 : rec_off + 16])[0]
+                                data_off = struct.unpack('<I', bhd_bytes[rec_off + 24 : rec_off + 28])[0]
+                                from soulstruct.dcx import decompress
+                                try:
+                                    bdt_f.seek(data_off)
+                                    compressed_data = bdt_f.read(comp_sz)
+                                    tpf_raw, _ = decompress(compressed_data)
+                                    all_textures.update(extract_textures_from_tpf(tpf_raw))
+                                except Exception:
+                                    pass
     else:
         binder = Binder.from_path(str(filepath))
         for e in binder.entries:

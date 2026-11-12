@@ -8,7 +8,16 @@ set -euo pipefail
 BBHOST_DIR="${BBHOST_DIR:-$HOME/Games/bbhost}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-GAME_DIR="${GAME_DIR:-$REPO_ROOT/CUSA03173-PSX}"
+GAME_DIR="${GAME_DIR:-${BLOODBORNE_GAME_DIR:-}}"
+if [ -z "$GAME_DIR" ]; then
+    if [ -d "$REPO_ROOT/CUSA03173" ]; then
+        GAME_DIR="$REPO_ROOT/CUSA03173"
+    elif [ -d "$REPO_ROOT/CUSA03173-PSX" ]; then
+        GAME_DIR="$REPO_ROOT/CUSA03173-PSX"
+    else
+        GAME_DIR="$REPO_ROOT/CUSA03173"
+    fi
+fi
 REAL_DATA_DIR="$HOME/.local/share/bbhost/data"
 REAL_SAVE_DIR="$REAL_DATA_DIR/saves"
 REAL_CONFIG_DIR="$HOME/.config/bbhost"
