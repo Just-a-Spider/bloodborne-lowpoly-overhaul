@@ -492,23 +492,70 @@ fn prompt_input(prompt: &str) -> String {
     buffer.trim().to_string()
 }
 
+fn pick_game_directory() -> Option<PathBuf> {
+    println!("Opening folder picker: Please select your Bloodborne CUSA03173 directory...");
+    rfd::FileDialog::new()
+        .set_title("Select Bloodborne (CUSA03173) Game Folder")
+        .pick_folder()
+}
+
+fn pick_output_directory() -> Option<PathBuf> {
+    println!("Opening folder picker: Please select destination mods directory...");
+    rfd::FileDialog::new()
+        .set_title("Select Destination Mods Folder")
+        .pick_folder()
+}
+
 fn main() {
     let mut args = Args::parse();
     let is_interactive = std::env::args().len() <= 1;
 
     // Interactive fallback for Regular Joe
     if args.game.is_none() {
+        println!("=================================================================");
+        println!("Bloodborne: Low-Poly Overhaul - Interactive Reconstructor v1.2.0");
+        println!("=================================================================");
+
+        let mut chosen_game = None;
         if let Some(detected) = auto_detect_game_dir() {
             println!("Auto-detected Bloodborne game directory: {}", detected.display());
-            args.game = Some(detected);
-        } else {
-            println!("Bloodborne: Low-Poly Overhaul - Reconstructor v1.2.0");
-            println!("---------------------------------------------------");
-            let input = prompt_input("Enter path to Bloodborne CUSA03173 directory: ");
-            if !input.is_empty() {
-                args.game = Some(PathBuf::from(input));
+            let ans = prompt_input("Use this directory? [Y/n / b to browse]: ");
+            if ans.is_empty() || ans.eq_ignore_ascii_case("y") {
+                chosen_game = Some(detected);
+            } else if ans.eq_ignore_ascii_case("b") {
+                chosen_game = pick_game_directory();
             }
         }
+
+        while chosen_game.is_none() {
+            println!("\nPlease select your Bloodborne CUSA03173 directory:");
+            println!("  [1] Open GUI Folder Browser (Recommended)");
+            println!("  [2] Enter folder path manually");
+            let choice = prompt_input("Choice [1]: ");
+
+            if choice == "2" {
+                let manual = prompt_input("Enter path to CUSA03173: ");
+                if !manual.is_empty() {
+                    chosen_game = Some(PathBuf::from(manual));
+                }
+            } else {
+                chosen_game = pick_game_directory();
+            }
+
+            if let Some(ref p) = chosen_game {
+                if !p.join("dvdroot_ps4").is_dir() {
+                    println!("\nWarning: 'dvdroot_ps4' not found inside {}.", p.display());
+                    println!("Make sure you select the root CUSA03173 folder that contains dvdroot_ps4.");
+                    let retry = prompt_input("Try again? [Y/n]: ");
+                    if !retry.is_empty() && !retry.eq_ignore_ascii_case("y") {
+                        break;
+                    }
+                    chosen_game = None;
+                }
+            }
+        }
+
+        args.game = chosen_game;
     }
 
     let game_path = match args.game {
@@ -569,14 +616,33 @@ fn main() {
         }
     }
 
+    // Interactive destination folder selection
+    if is_interactive && args.out.is_none() && args.mods_dir.is_none() {
+        println!("\nOutput destination for reconstructed mods [default: ./mods]:");
+        println!("  [1] Use default (./mods)");
+        println!("  [2] Open GUI Folder Browser to select custom mods folder");
+        println!("  [3] Enter custom folder path manually");
+        let out_choice = prompt_input("Choice [1]: ");
+        if out_choice == "2" {
+            if let Some(picked) = pick_output_directory() {
+                args.out = Some(picked);
+            }
+        } else if out_choice == "3" {
+            let manual_out = prompt_input("Enter destination mods folder path: ");
+            if !manual_out.is_empty() {
+                args.out = Some(PathBuf::from(manual_out));
+            }
+        }
+    }
+
     // Auto batch mode if no specific patch passed and multiple patches found
     if !args.all_patches && args.patch.is_none() && patches_found.len() > 1 && is_interactive {
         println!(
-            "Found {} patch containers in {:?}.",
+            "\nFound {} patch containers in {:?}.",
             patches_found.len(),
             search_dirs
         );
-        let ans = prompt_input("Reconstruct all modular pillars into ./mods? [Y/n]: ");
+        let ans = prompt_input("Reconstruct all modular pillars into mods directory? [Y/n]: ");
         if ans.is_empty() || ans.eq_ignore_ascii_case("y") {
             args.all_patches = true;
         }

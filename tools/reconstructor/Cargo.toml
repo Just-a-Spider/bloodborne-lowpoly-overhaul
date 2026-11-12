@@ -13,6 +13,7 @@ sha2 = "0.10"
 rayon = "1.10"
 memmap2 = "0.9.12"
 fs2 = "0.4.3"
+rfd = { version = "0.18.0", default-features = false, features = ["xdg-portal"] }
 
 [profile.release]
 opt-level = 3
