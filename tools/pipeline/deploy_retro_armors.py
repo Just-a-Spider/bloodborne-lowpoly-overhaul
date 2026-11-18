@@ -19,18 +19,130 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from soulstruct.containers import Binder
+from soulstruct.flver.core import FLVER
+from bone_transform_utils import update_flver_bounding_boxes
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 PIPELINE_DIR = Path(__file__).resolve().parent
 
 DEFAULT_VANILLA_PARTS = REPO_ROOT / "CUSA03173" / "dvdroot_ps4" / "parts"
+DEFAULT_SANDBOX_PARTS = REPO_ROOT / "CUSA03173-PSX" / "dvdroot_ps4" / "parts"
 DEFAULT_MODS_DIR = REPO_ROOT / "mods"
 DEFAULT_MODS_JSON = REPO_ROOT / "mods.json"
 
-STIFF_MOD_NAME = "Bloodborne Retro Armors - Flat Stiff"
-CLOTH_MOD_NAME = "Bloodborne Retro Armors - Cloth Physics"
+STIFF_MOD_NAME = "Bloodborne Retro Armors and Weapons - Flat Stiff"
+CLOTH_MOD_NAME = "Bloodborne Retro Armors and Weapons - Cloth Physics"
 BASE_MOD_NAME = "Bloodborne Low-Poly Overhaul"
 BACKUP_MOD_NAME = "Bloodborne Low-Poly Overhaul (Stable Backup)"
+
+MARIA_PARTS_FILES = [
+    "hd_f_9300.partsbnd.dcx", "hd_f_9300_l.partsbnd.dcx",
+    "hd_m_9300.partsbnd.dcx", "hd_m_9300_l.partsbnd.dcx",
+    "bd_f_9300.partsbnd.dcx", "bd_f_9300_l.partsbnd.dcx",
+    "bd_m_9300.partsbnd.dcx", "bd_m_9300_l.partsbnd.dcx",
+]
+
+
+def fix_maria_cloth_and_hat(cloth_parts_dir: Path, stiff_parts_dir: Path, sandbox_parts_dir: Path):
+    """
+    Repairs Lady Maria (set 9300) hat and garb:
+    1. For Cloth Physics Edition and CUSA03173-PSX:
+       Preserves Havok dynamic solver data (_c.hkx, _c.clm2, _Cloth.mtd) and parents
+       dummy simulation bones to character roots (Head for hat, Spine2 for mantle).
+    2. For Flat Stiff Edition:
+       Decoupled cloth submeshes are assigned explicit default_bone_indices (Head for hat feathers,
+       Spine2/Neck for mantle and scarves) and unparented dummy bones are anchored to character roots.
+    """
+    print("\n=== Synchronizing Lady Maria (Set 9300) Hat & Garb ===")
+
+    # 1. Cloth Physics mode + Sandbox deployment
+    for fname in MARIA_PARTS_FILES:
+        src = cloth_parts_dir / fname
+        if not src.is_file():
+            # If not in cloth mod dir, try vanilla as fallback
+            v_src = DEFAULT_VANILLA_PARTS / fname
+            if v_src.is_file():
+                src = v_src
+
+        if not src.is_file():
+            print(f"  [WARN] Source file {fname} not found, skipping cloth fix.")
+            continue
+
+        b = Binder.from_path(src)
+        flv_e = next((e for e in b.entries if e.name.endswith(".flver")), None)
+        if flv_e:
+            flv = FLVER.from_bytes(flv_e.get_uncompressed_data())
+            if fname.startswith("hd_"):
+                head_idx = next((i for i, bn in enumerate(flv.bones) if bn.name == "Head"), 0)
+                for bn in flv.bones:
+                    if "feather" in bn.name.lower() or "9300" in bn.name:
+                        if bn.parent_bone_index == -1:
+                            bn.parent_bone_index = head_idx
+            else:
+                spine2_idx = next((i for i, bn in enumerate(flv.bones) if bn.name == "Spine2"), 2)
+                for bn in flv.bones:
+                    if "mantle" in bn.name.lower() or "scarf" in bn.name.lower() or "9300" in bn.name or "dummy" in bn.name.lower():
+                        if bn.parent_bone_index == -1:
+                            bn.parent_bone_index = spine2_idx
+
+            update_flver_bounding_boxes(flv)
+            flv_e.set_uncompressed_data(flv.to_bytes())
+
+        data = b.to_bytes()
+        # Save to Cloth Physics mod
+        dest_cloth = cloth_parts_dir / fname
+        dest_cloth.parent.mkdir(parents=True, exist_ok=True)
+        dest_cloth.write_bytes(data)
+
+        # Save to Sandbox (CUSA03173-PSX)
+        dest_sandbox = sandbox_parts_dir / fname
+        dest_sandbox.parent.mkdir(parents=True, exist_ok=True)
+        dest_sandbox.write_bytes(data)
+        print(f"  [CLOTH] {fname}: Dynamic Havok cloth and parented bones deployed ({len(data)} bytes)")
+
+    # 2. Flat Stiff mode
+    for fname in MARIA_PARTS_FILES:
+        src = stiff_parts_dir / fname
+        if not src.is_file():
+            continue
+
+        b = Binder.from_path(src)
+        flv_e = next((e for e in b.entries if e.name.endswith(".flver")), None)
+        if flv_e:
+            flv = FLVER.from_bytes(flv_e.get_uncompressed_data())
+            if fname.startswith("hd_"):
+                head_idx = next((i for i, bn in enumerate(flv.bones) if bn.name == "Head"), 0)
+                for bn in flv.bones:
+                    if "feather" in bn.name.lower() or "9300" in bn.name:
+                        if bn.parent_bone_index == -1:
+                            bn.parent_bone_index = head_idx
+                if len(flv.meshes) > 1:
+                    flv.meshes[1].default_bone_index = head_idx
+                if len(flv.meshes) > 2:
+                    flv.meshes[2].default_bone_index = head_idx
+            else:
+                spine2_idx = next((i for i, bn in enumerate(flv.bones) if bn.name == "Spine2"), 2)
+                neck_idx = next((i for i, bn in enumerate(flv.bones) if bn.name == "Neck"), 21)
+                for bn in flv.bones:
+                    if "mantle" in bn.name.lower() or "scarf" in bn.name.lower() or "9300" in bn.name or "dummy" in bn.name.lower():
+                        if bn.parent_bone_index == -1:
+                            bn.parent_bone_index = spine2_idx
+                for mi in [2, 3, 4, 5]:
+                    if mi < len(flv.meshes):
+                        flv.meshes[mi].default_bone_index = spine2_idx
+                for mi in [6, 7, 8]:
+                    if mi < len(flv.meshes):
+                        flv.meshes[mi].default_bone_index = neck_idx
+
+            update_flver_bounding_boxes(flv)
+            flv_e.set_uncompressed_data(flv.to_bytes())
+
+        data = b.to_bytes()
+        dest_stiff = stiff_parts_dir / fname
+        dest_stiff.parent.mkdir(parents=True, exist_ok=True)
+        dest_stiff.write_bytes(data)
+        print(f"  [STIFF] {fname}: Rigid anchored bones and default indices deployed ({len(data)} bytes)")
 
 
 def write_mod_metadata(mod_dir: Path, is_cloth: bool, file_count: int = 796):
@@ -135,10 +247,20 @@ def main():
     parser.add_argument("--mods-dir", type=Path, default=DEFAULT_MODS_DIR, help="Target mods root directory")
     parser.add_argument("--config", type=Path, default=DEFAULT_MODS_JSON, help="Target mods.json config path")
     parser.add_argument("--vanilla-parts", type=Path, default=DEFAULT_VANILLA_PARTS, help="Path to vanilla parts")
+    parser.add_argument("--sandbox-parts", type=Path, default=DEFAULT_SANDBOX_PARTS, help="Path to sandbox parts (CUSA03173-PSX)")
+    parser.add_argument("--fix-maria-only", action="store_true", help="Only synchronize Lady Maria (set 9300) cloth & bones")
     args = parser.parse_args()
 
     mods_dir = args.mods_dir.resolve()
     mods_dir.mkdir(parents=True, exist_ok=True)
+    stiff_parts_dir = mods_dir / STIFF_MOD_NAME / "dvdroot_ps4" / "parts"
+    cloth_parts_dir = mods_dir / CLOTH_MOD_NAME / "dvdroot_ps4" / "parts"
+    sandbox_parts_dir = args.sandbox_parts.resolve()
+
+    if args.fix_maria_only:
+        fix_maria_cloth_and_hat(cloth_parts_dir, stiff_parts_dir, sandbox_parts_dir)
+        print("\n[OK] Lady Maria fixes applied successfully.")
+        return
 
     batch_script = PIPELINE_DIR / "batch_blender_demake_parts.py"
     if not batch_script.is_file():
@@ -146,8 +268,6 @@ def main():
         sys.exit(1)
 
     t0 = time.time()
-    stiff_parts_dir = mods_dir / STIFF_MOD_NAME / "dvdroot_ps4" / "parts"
-    cloth_parts_dir = mods_dir / CLOTH_MOD_NAME / "dvdroot_ps4" / "parts"
 
     # Step 1: Build Stiff Edition
     if args.mode in ("stiff", "both"):
@@ -202,6 +322,9 @@ def main():
 
         write_mod_metadata(mods_dir / CLOTH_MOD_NAME, is_cloth=True)
         print(f"[OK] Cloth Physics Edition packaged in {mods_dir / CLOTH_MOD_NAME}")
+
+    # Synchronize Lady Maria hat and garb
+    fix_maria_cloth_and_hat(cloth_parts_dir, stiff_parts_dir, sandbox_parts_dir)
 
     # Step 3: Update mods.json configuration
     update_mods_config(args.config, args.active)

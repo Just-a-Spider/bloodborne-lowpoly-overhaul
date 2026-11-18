@@ -189,7 +189,7 @@ def process_single_obj_archive(
             or stem.startswith("o29783") or stem.startswith("o29784") or stem.startswith("o29911")
             or stem.startswith("o29912") or stem.startswith("o29961")
             or stem.startswith("o32231") or stem.startswith("o32232") or stem in {"o260303", "o260310"}
-            or stem.startswith("o24301") or stem in {"o270102", "o270104", "o273011", "o281000", "o281001", "o282020"}
+            or stem in {"o270102", "o270104", "o273011", "o281000", "o281001", "o282020"}
         )
         is_target_cadaver = (
             stem.startswith("o29721") or stem.startswith("o29850") or stem.startswith("o29851")
@@ -199,15 +199,21 @@ def process_single_obj_archive(
             or stem in {"o230150", "o233001", "o240092", "o241050", "o343102"}
         )
 
+        is_research_hall_mechanism = (
+            stem.startswith("o24301")
+            or stem.startswith("o35050")
+            or stem in {"o353006", "o353011", "o353013", "o249001", "o249002"}
+        )
+
         should_bypass = (
             is_ladder or is_chalice_door_statue or is_sensitive_door or has_anibnd or is_stair
             or is_chalice_composite or is_chalice_chandelier or is_chalice_statue or is_chalice_elevator
             or is_loot_corpse or is_celestial or is_yahargul_composite or is_nightmare_composite
-            or is_lecture_composite or has_offset_bones
+            or is_lecture_composite or has_offset_bones or is_research_hall_mechanism
         )
 
-        # Dungeon cages and cadavers are explicitly un-bypassed and demade
-        if is_target_cage or is_target_cadaver:
+        # Dungeon cages and cadavers are explicitly un-bypassed and demade (unless protected mechanism)
+        if (is_target_cage or is_target_cadaver) and not is_research_hall_mechanism:
             should_bypass = False
 
         if should_bypass:

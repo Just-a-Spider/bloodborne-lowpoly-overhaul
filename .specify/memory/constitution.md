@@ -1,10 +1,10 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version Change: 1.1.0 -> 1.2.0
+Version Change: 1.2.0 -> 1.2.1
 Modified Principles: None
 Modified Sections:
-  - Technical Constraints & Performance Standards: Updated Modular Packaging from 4 pillars to 5 independent pillars (Maps and Props/Objects decoupled).
+  - Technical Constraints & Performance Standards: Added Map ID Reference & Nomenclature Table for internal map routing and asset preservation.
 Removed Sections: None
 Follow-up TODOs: None
 -->
@@ -44,6 +44,27 @@ All completed features, major pipeline passes, and release milestones MUST under
   4. **Characters**: `mods/Bloodborne Retro Characters/` (`dvdroot_ps4/chr/` enemies, bosses, Plain Doll, friendly NPCs)
   5. **UI & HUD**: `mods/Bloodborne Retro HUD and UI/` (`dvdroot_ps4/menu/` retro vitals gauges, icons, interaction frames, announcement banners)
 
+- **Map ID Reference & Internal Nomenclature**: Pipeline stages and preservation rules MUST adhere to internal map nomenclature to prevent miscategorization of interactive props, event triggers, and environment assets:
+  | Map ID | In-game Name | Internal Name | Internal Name (Translated) |
+  | --- | --- | --- | --- |
+  | m21_00 | Hunter's Dream | 拠点 | Base |
+  | m21_01 | Abandoned Old Workshop | 拠点(現実) | Base (True Version) |
+  | m22_00 | Hemwick Charnel Lane | 墓地街 | Cemetary Town |
+  | m23_00 | Old Yharnam | 廃墟 | Ruins |
+  | m24_00 | Cathedral Ward | 聖堂街A | Cathedral City A |
+  | m24_01 | Central Yharnam, Iosefka's Clinic | 聖堂街B | Cathedral City B |
+  | m24_02 | Upper Cathedral Ward, Healing Church Workshop, Altar of Despair | 聖堂街C | Cathedral City C |
+  | m25_00 | Forsaken Castle Cainhurst | 古城 | Old Castle |
+  | m26_00 | Nightmare of Mensis | トラップロード | Trap Road [*"Torappurōdo"*] |
+  | m27_00 | Forbidden Woods | 森 | Forest |
+  | m28_00 | Yahar'gul, Unseen Village | 生贄の街 | Road of Sacrifices |
+  | m29_XX | (All Chalice Dungeons) | ダンジョン | Dungeon |
+  | m32_00 | Byrgenwerth, Lecture Building, Moonside Lake | 大学 | University |
+  | m33_00 | Nightmare Frontier | 故郷 | Hometown |
+  | m34_00 | Hunter's Nightmare | DLC聖堂街D | DLC Cathedral City D |
+  | m35_00 | Research Hall | DLC時計塔 | DLC Clocktower |
+  | m36_00 | Fishing Hamlet | DLC漁村 | DLC Fishing Village |
+
 ## Development Workflow & Quality Gates
 
 - **Structured Staging**: Work MUST proceed through four explicit phases: (1) Contract & Invariant Specification, (2) Test Harness Implementation, (3) Mesh/Texture Generation & Injection, and (4) E2E Automated Gate Verification.
@@ -58,4 +79,4 @@ This Constitution is the foundational engineering standard for the Bloodborne Lo
 - **Versioning Policy**: Follows Semantic Versioning (MAJOR for breaking changes or removal of core principles; MINOR for new principles or material expansions; PATCH for non-semantic clarifications and formatting updates).
 - **Compliance Review**: All task plans, implementation PRs, and architectural decisions MUST be audited against these core rules before merge.
 
-**Version**: 1.2.0 | **Ratified**: 2026-11-08 | **Last Amended**: 2026-11-08
+**Version**: 1.2.1 | **Ratified**: 2026-11-08 | **Last Amended**: 2026-11-18

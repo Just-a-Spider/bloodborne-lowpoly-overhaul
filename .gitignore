@@ -77,3 +77,8 @@ ps4_unfself/
 # Agent teamwork workspace
 .agents/
 
+# Non-mod specifications and internal research (never commit)
+specs/000-*/
+.specify/assessments/
+
+
