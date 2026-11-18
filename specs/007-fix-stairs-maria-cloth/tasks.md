@@ -79,7 +79,7 @@
 
 - [X] T013 Update dist/RELEASE_NOTES.md with 1.2.1 release notes detailing Research Hall stairs and Lady Maria cloth fixes
 - [X] T014 Verify Git staging excludes specs/000-*/ and only stages production mod changes
-- [ ] T015 Commit changes, push to origin main, and publish release 1.2.1
+- [X] T015 Commit changes, push to origin main, and publish release 1.2.1
 
 ---
 
